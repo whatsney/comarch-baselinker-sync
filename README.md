@@ -93,6 +93,13 @@ The deployment workflow reads these GitHub Actions secrets:
 | `MAKE_PUBLIC_FEED` | Keep `false` unless public S3 access is intentional |
 | `ADMIN_USERNAME` | Admin panel username |
 | `ADMIN_PASSWORD` | Admin panel password |
+| `CLIENT_BRAND_NAME` | Private customer display name |
+| `CLIENT_PANEL_TITLE` | Private admin panel heading |
+| `CLIENT_PANEL_SUBTITLE` | Private admin panel subtitle |
+| `CLIENT_PRIMARY_COLOR` | Customer primary color as six-digit hex |
+| `CLIENT_PRIMARY_DARK_COLOR` | Dark primary color as six-digit hex |
+| `CLIENT_SECONDARY_COLOR` | Customer secondary color as six-digit hex |
+| `CLIENT_LOGO_BASE64` | Private PNG logo encoded as Base64 |
 | `BUDGET_ALERT_EMAIL` | AWS Budget notification address |
 | `BUDGET_LIMIT_USD` | Monthly budget limit |
 
@@ -103,6 +110,9 @@ Run workflow**. A normal push runs tests and CDK synthesis only.
 
 - BaseLinker tokens are copied by CI to SSM Parameter Store as `SecureString`.
 - The admin password is hashed before it reaches the Lambda environment.
+- Customer branding is stored only in GitHub Actions secrets. The logo is
+  reconstructed on the ephemeral runner immediately before CDK packages the
+  admin Lambda and is ignored by Git.
 - S3 public access is disabled by default.
 - Lambda reserved concurrency defaults to `1`.
 - Never paste real feed URLs or credentials into issues, commits, or workflow

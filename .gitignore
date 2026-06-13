@@ -18,3 +18,4 @@ reports/
 *.key
 audit-*.json
 sync-*.json
+admin_src/client-logo.png

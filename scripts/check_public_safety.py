@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,6 +29,10 @@ PATTERNS = {
         r"\s*[^\s<>{}\[\]]{8,}\s*$"
     ),
 }
+FORBIDDEN_TRACKED_PATHS = {
+    ".env",
+    "admin_src/client-logo.png",
+}
 
 
 def iter_text_files():
@@ -42,6 +47,16 @@ def iter_text_files():
 
 def main() -> int:
     findings = []
+    tracked = set(
+        subprocess.check_output(
+            ["git", "ls-files"],
+            cwd=ROOT,
+            text=True,
+        ).splitlines()
+    )
+    for relative_path in sorted(FORBIDDEN_TRACKED_PATHS & tracked):
+        findings.append(f"{relative_path}: private deployment file")
+
     for path in iter_text_files():
         text = path.read_text(encoding="utf-8", errors="ignore")
         if path.name == ".env.example":

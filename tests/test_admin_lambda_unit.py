@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from datetime import timezone
 import types
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,6 +104,32 @@ class TestAdminStatusSummary(unittest.TestCase):
         self.assertEqual(out["steps"][2]["status"], "running")
         self.assertEqual(out["mutation_total"], 5)
         self.assertEqual(out["mutation_done"], 5)
+
+
+class TestAdminBranding(unittest.TestCase):
+    def test_private_branding_is_rendered_and_escaped(self):
+        with patch.object(admin, "BRAND_NAME", 'Example <Store>'):
+            with patch.object(admin, "BRAND_PANEL_TITLE", "Catalog sync"):
+                with patch.object(admin, "BRAND_PANEL_SUBTITLE", "Private deployment"):
+                    with patch.object(admin, "BRAND_PRIMARY_COLOR", "#112233"):
+                        with patch.object(admin, "BRAND_PRIMARY_DARK_COLOR", "#223344"):
+                            with patch.object(admin, "BRAND_SECONDARY_COLOR", "#334455"):
+                                with patch.object(admin, "BRAND_LOGO_ENABLED", True):
+                                    page = admin._page()
+
+        self.assertIn("Example &lt;Store&gt; - synchronizacja", page)
+        self.assertIn('<img src="/assets/client-logo.png"', page)
+        self.assertIn("--orange: #112233", page)
+        self.assertIn("--orange-dark: #223344", page)
+        self.assertIn("--navy: #334455", page)
+        self.assertNotIn("Example <Store>", page)
+
+    def test_invalid_brand_color_uses_safe_default(self):
+        with patch.object(admin, "BRAND_PRIMARY_COLOR", "red; display:none"):
+            page = admin._page()
+
+        self.assertIn("--orange: #1673b8", page)
+        self.assertNotIn("display:none", page)
 
 
 if __name__ == "__main__":

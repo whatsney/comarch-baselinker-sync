@@ -3,11 +3,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import html
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -41,6 +44,38 @@ BUDGET_LIMIT_USD = os.getenv("BUDGET_LIMIT_USD", "30")
 BUDGET_USD_TO_PLN_RATE = os.getenv("BUDGET_USD_TO_PLN_RATE", "4.00")
 BUDGET_FX_RATE_SSM_PARAM = os.getenv("BUDGET_FX_RATE_SSM_PARAM", "/comarch-baselinker-sync/usd-pln-rate")
 AWS_ACCOUNT_ID = os.getenv("AWS_ACCOUNT_ID", "")
+BRAND_NAME = os.getenv("BRAND_NAME", "Comarch → BaseLinker Sync")
+BRAND_PANEL_TITLE = os.getenv("BRAND_PANEL_TITLE", "Synchronizacja produktów")
+BRAND_PANEL_SUBTITLE = os.getenv(
+    "BRAND_PANEL_SUBTITLE",
+    "Podgląd i ręczne uruchamianie synchronizacji produktów",
+)
+BRAND_PRIMARY_COLOR = os.getenv("BRAND_PRIMARY_COLOR", "#1673b8")
+BRAND_PRIMARY_DARK_COLOR = os.getenv("BRAND_PRIMARY_DARK_COLOR", "#0f5d96")
+BRAND_SECONDARY_COLOR = os.getenv("BRAND_SECONDARY_COLOR", "#183c5c")
+BRAND_LOGO_ENABLED = os.getenv("BRAND_LOGO_ENABLED", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+LOGO_PATH = Path(__file__).with_name("client-logo.png")
+
+
+def _safe_css_color(value: str, fallback: str) -> str:
+    cleaned = str(value or "").strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", cleaned):
+        return cleaned
+    return fallback
+
+
+def _brand_initials() -> str:
+    words = re.findall(r"[A-Za-z0-9]+", BRAND_NAME)
+    if not words:
+        return "CB"
+    if len(words) == 1:
+        return words[0][:2].upper()
+    return (words[0][:1] + words[1][:1]).upper()
 
 
 def _json_response(status_code: int, payload: dict) -> dict:
@@ -65,12 +100,35 @@ def _html_response(status_code: int, body: str) -> dict:
     }
 
 
+def _image_response(status_code: int, content_type: str, body: bytes) -> dict:
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": content_type,
+            "Cache-Control": "private, max-age=86400",
+        },
+        "isBase64Encoded": True,
+        "body": base64.b64encode(body).decode("ascii"),
+    }
+
+
+def _logo_response() -> dict:
+    if not BRAND_LOGO_ENABLED:
+        return _json_response(404, {"ok": False, "message": "Brand logo is disabled."})
+    try:
+        return _image_response(200, "image/png", LOGO_PATH.read_bytes())
+    except OSError as exc:
+        return _json_response(404, {"ok": False, "message": f"Logo not found: {exc}"})
+
+
 def _favicon_response() -> dict:
-    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+    primary = _safe_css_color(BRAND_PRIMARY_COLOR, "#1673b8")
+    initials = html.escape(_brand_initials())
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="12" fill="#eaf3ff"/>
   <text x="32" y="42" text-anchor="middle"
         font-family="Trebuchet MS, Arial, sans-serif"
-        font-size="31" font-weight="800" fill="#165d9c">CB</text>
+        font-size="31" font-weight="800" fill="{primary}">{initials}</text>
 </svg>"""
     return {
         "statusCode": 200,
@@ -859,18 +917,34 @@ def _trigger_sync(event: dict) -> dict:
 
 
 def _page() -> str:
-    return """<!doctype html>
+    primary = _safe_css_color(BRAND_PRIMARY_COLOR, "#1673b8")
+    primary_dark = _safe_css_color(BRAND_PRIMARY_DARK_COLOR, "#0f5d96")
+    secondary = _safe_css_color(BRAND_SECONDARY_COLOR, "#183c5c")
+    brand_name = html.escape(BRAND_NAME)
+    panel_title = html.escape(BRAND_PANEL_TITLE)
+    panel_subtitle = html.escape(BRAND_PANEL_SUBTITLE)
+    initials = html.escape(_brand_initials())
+    if BRAND_LOGO_ENABLED:
+        brand_visual = (
+            '<div class="brand-logo">'
+            '<img src="/assets/client-logo.png" alt="' + brand_name + '">'
+            "</div>"
+        )
+    else:
+        brand_visual = f'<div class="brand-mark" aria-hidden="true">{initials}</div>'
+
+    template = """<!doctype html>
 <html lang="pl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Comarch → BaseLinker Sync</title>
+  <title>__BRAND_NAME__ - synchronizacja</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <style>
     :root {
-      --orange: #1673b8;
-      --orange-dark: #0f5d96;
-      --navy: #183c5c;
+      --orange: __PRIMARY_COLOR__;
+      --orange-dark: __PRIMARY_DARK_COLOR__;
+      --navy: __SECONDARY_COLOR__;
       --danger: #b3261e;
       --ink: #263652;
       --muted: #6a6a6a;
@@ -910,6 +984,20 @@ def _page() -> str:
       box-shadow: 0 12px 28px rgba(22, 115, 184, .24);
       font-weight: 900;
       letter-spacing: -.04em;
+    }
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 178px;
+      max-width: 44vw;
+      min-height: 44px;
+      padding: 4px 0;
+    }
+    .brand-logo img {
+      display: block;
+      width: 100%;
+      height: auto;
     }
     h1 { margin: 0; font-size: 25px; line-height: 1.1; color: var(--navy); }
     .subtitle { margin-top: 5px; color: var(--muted); font-size: 14px; }
@@ -1092,6 +1180,7 @@ def _page() -> str:
       .config-grid { grid-template-columns: 1fr; }
       h1 { font-size: 22px; }
       .brand-mark { width: 46px; height: 46px; flex-basis: 46px; }
+      .brand-logo { width: 152px; max-width: 70vw; }
     }
   </style>
 </head>
@@ -1100,10 +1189,10 @@ def _page() -> str:
   <main>
     <header>
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">CB</div>
+        __BRAND_VISUAL__
         <div>
-          <h1>Comarch → BaseLinker Sync</h1>
-          <div class="subtitle">Podgląd i ręczne uruchamianie synchronizacji produktów</div>
+          <h1>__PANEL_TITLE__</h1>
+          <div class="subtitle">__PANEL_SUBTITLE__</div>
         </div>
       </div>
       <div class="actions">
@@ -1637,6 +1726,15 @@ def _page() -> str:
   </script>
 </body>
 </html>"""
+    return (
+        template.replace("__BRAND_NAME__", brand_name)
+        .replace("__PANEL_TITLE__", panel_title)
+        .replace("__PANEL_SUBTITLE__", panel_subtitle)
+        .replace("__BRAND_VISUAL__", brand_visual)
+        .replace("__PRIMARY_COLOR__", primary)
+        .replace("__PRIMARY_DARK_COLOR__", primary_dark)
+        .replace("__SECONDARY_COLOR__", secondary)
+    )
 
 
 def lambda_handler(event, context):
@@ -1646,6 +1744,8 @@ def lambda_handler(event, context):
     method, path = _request_info(event)
     if method == "GET" and path in {"/", "/admin"}:
         return _html_response(200, _page())
+    if method == "GET" and path == "/assets/client-logo.png":
+        return _logo_response()
     if method == "GET" and path == "/assets/favicon.svg":
         return _favicon_response()
     if method == "GET" and path == "/api/status":

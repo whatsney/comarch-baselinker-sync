@@ -58,6 +58,16 @@ class ComarchBaseLinkerPipelineStack(Stack):
         admin_function_name = ctx("adminFunctionName", "comarch-baselinker-sync-admin")
         admin_username = ctx("adminUsername", "admin")
         admin_password_hash = ctx("adminPasswordHash", required=True)
+        brand_name = ctx("brandName", "Comarch → BaseLinker Sync")
+        brand_panel_title = ctx("brandPanelTitle", "Synchronizacja produktów")
+        brand_panel_subtitle = ctx(
+            "brandPanelSubtitle",
+            "Podgląd i ręczne uruchamianie synchronizacji produktów",
+        )
+        brand_primary_color = ctx("brandPrimaryColor", "#1673b8")
+        brand_primary_dark_color = ctx("brandPrimaryDarkColor", "#0f5d96")
+        brand_secondary_color = ctx("brandSecondaryColor", "#183c5c")
+        brand_logo_enabled = ctx_bool("brandLogoEnabled", False)
         budget_name = ctx("budgetName", "comarch-baselinker-sync-monthly-budget")
         budget_limit_usd = ctx("budgetLimitUsd", "30")
         budget_usd_to_pln_rate = ctx("budgetUsdToPlnRate", "4.00")
@@ -465,6 +475,13 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 "BL_API_TOKEN_SSM_PARAM": bl_api_token_ssm_param,
                 "ADMIN_USERNAME": admin_username,
                 "ADMIN_PASSWORD_SHA256": admin_password_hash,
+                "BRAND_NAME": brand_name,
+                "BRAND_PANEL_TITLE": brand_panel_title,
+                "BRAND_PANEL_SUBTITLE": brand_panel_subtitle,
+                "BRAND_PRIMARY_COLOR": brand_primary_color,
+                "BRAND_PRIMARY_DARK_COLOR": brand_primary_dark_color,
+                "BRAND_SECONDARY_COLOR": brand_secondary_color,
+                "BRAND_LOGO_ENABLED": str(brand_logo_enabled).lower(),
                 "SCHEDULE_NAME": schedule_name,
                 "SCHEDULE_GROUP": "default",
             },
@@ -537,6 +554,11 @@ class ComarchBaseLinkerPipelineStack(Stack):
         )
         admin_api.add_routes(
             path="/admin",
+            methods=[apigwv2.HttpMethod.GET],
+            integration=admin_integration,
+        )
+        admin_api.add_routes(
+            path="/assets/client-logo.png",
             methods=[apigwv2.HttpMethod.GET],
             integration=admin_integration,
         )

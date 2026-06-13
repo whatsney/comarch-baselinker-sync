@@ -45,6 +45,13 @@ jobs:
       MAKE_PUBLIC_FEED: ${{ secrets.MAKE_PUBLIC_FEED }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      CLIENT_BRAND_NAME: ${{ secrets.CLIENT_BRAND_NAME }}
+      CLIENT_PANEL_TITLE: ${{ secrets.CLIENT_PANEL_TITLE }}
+      CLIENT_PANEL_SUBTITLE: ${{ secrets.CLIENT_PANEL_SUBTITLE }}
+      CLIENT_PRIMARY_COLOR: ${{ secrets.CLIENT_PRIMARY_COLOR }}
+      CLIENT_PRIMARY_DARK_COLOR: ${{ secrets.CLIENT_PRIMARY_DARK_COLOR }}
+      CLIENT_SECONDARY_COLOR: ${{ secrets.CLIENT_SECONDARY_COLOR }}
+      CLIENT_LOGO_BASE64: ${{ secrets.CLIENT_LOGO_BASE64 }}
       BUDGET_ALERT_EMAIL: ${{ secrets.BUDGET_ALERT_EMAIL }}
       BUDGET_LIMIT_USD: ${{ secrets.BUDGET_LIMIT_USD }}
     steps:
@@ -92,8 +99,18 @@ jobs:
           RPM="${BL_API_MAX_RPM:-90}"
           LIMIT="${BUDGET_LIMIT_USD:-30}"
           PUBLIC_FEED="${MAKE_PUBLIC_FEED:-false}"
+          BRAND_NAME="${CLIENT_BRAND_NAME:-Comarch → BaseLinker Sync}"
+          PANEL_TITLE="${CLIENT_PANEL_TITLE:-Synchronizacja produktów}"
+          PANEL_SUBTITLE="${CLIENT_PANEL_SUBTITLE:-Podgląd i ręczne uruchamianie synchronizacji produktów}"
+          PRIMARY_COLOR="${CLIENT_PRIMARY_COLOR:-#1673b8}"
+          PRIMARY_DARK_COLOR="${CLIENT_PRIMARY_DARK_COLOR:-#0f5d96}"
+          SECONDARY_COLOR="${CLIENT_SECONDARY_COLOR:-#183c5c}"
           PASSWORD_HASH="$(python -c 'import hashlib,os; print(hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest())')"
           EFFECTIVE_BUCKET_NAME="${BUCKET_NAME:-comarch-baselinker-sync-${ACCOUNT_ID}-${AWS_REGION}}"
+          for value in "$BRAND_NAME" "$PANEL_TITLE" "$PANEL_SUBTITLE" \
+            "$PRIMARY_COLOR" "$PRIMARY_DARK_COLOR" "$SECONDARY_COLOR"; do
+            echo "::add-mask::$value"
+          done
           {
             echo "AWS_ACCOUNT_ID=$ACCOUNT_ID"
             echo "PIPELINE_STACK_NAME_EFFECTIVE=${PIPELINE_STACK_NAME:-ComarchBaseLinkerSyncStack}"
@@ -116,7 +133,39 @@ jobs:
             echo "MAKE_PUBLIC_FEED_EFFECTIVE=$PUBLIC_FEED"
             echo "BUDGET_LIMIT_USD_EFFECTIVE=$LIMIT"
             echo "ADMIN_PASSWORD_HASH=$PASSWORD_HASH"
+            echo "CLIENT_BRAND_NAME_EFFECTIVE=$BRAND_NAME"
+            echo "CLIENT_PANEL_TITLE_EFFECTIVE=$PANEL_TITLE"
+            echo "CLIENT_PANEL_SUBTITLE_EFFECTIVE=$PANEL_SUBTITLE"
+            echo "CLIENT_PRIMARY_COLOR_EFFECTIVE=$PRIMARY_COLOR"
+            echo "CLIENT_PRIMARY_DARK_COLOR_EFFECTIVE=$PRIMARY_DARK_COLOR"
+            echo "CLIENT_SECONDARY_COLOR_EFFECTIVE=$SECONDARY_COLOR"
           } >> "$GITHUB_ENV"
+
+      - name: Restore private client logo
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          raw = os.environ.get("CLIENT_LOGO_BASE64", "").strip()
+          output = Path("admin_src/client-logo.png")
+          if not raw:
+              with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+                  env.write("CLIENT_LOGO_ENABLED=false\n")
+              raise SystemExit(0)
+
+          payload = base64.b64decode(raw, validate=True)
+          if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+              raise SystemExit("CLIENT_LOGO_BASE64 must contain a PNG image.")
+          if len(payload) > 1024 * 1024:
+              raise SystemExit("Client logo exceeds the 1 MB safety limit.")
+
+          output.write_bytes(payload)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write("CLIENT_LOGO_ENABLED=true\n")
+          PY
 
       - name: Store BaseLinker token in SSM
         shell: bash
@@ -164,5 +213,12 @@ jobs:
             -c makePublicFeed="$MAKE_PUBLIC_FEED_EFFECTIVE" \
             -c adminUsername="$ADMIN_USERNAME" \
             -c adminPasswordHash="$ADMIN_PASSWORD_HASH" \
+            -c brandName="$CLIENT_BRAND_NAME_EFFECTIVE" \
+            -c brandPanelTitle="$CLIENT_PANEL_TITLE_EFFECTIVE" \
+            -c brandPanelSubtitle="$CLIENT_PANEL_SUBTITLE_EFFECTIVE" \
+            -c brandPrimaryColor="$CLIENT_PRIMARY_COLOR_EFFECTIVE" \
+            -c brandPrimaryDarkColor="$CLIENT_PRIMARY_DARK_COLOR_EFFECTIVE" \
+            -c brandSecondaryColor="$CLIENT_SECONDARY_COLOR_EFFECTIVE" \
+            -c brandLogoEnabled="$CLIENT_LOGO_ENABLED" \
             -c budgetAlertEmail="${BUDGET_ALERT_EMAIL:-}" \
             -c budgetLimitUsd="$BUDGET_LIMIT_USD_EFFECTIVE"
