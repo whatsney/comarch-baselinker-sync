@@ -21,12 +21,28 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
+      PIPELINE_STACK_NAME: ${{ secrets.PIPELINE_STACK_NAME }}
+      BUDGET_STACK_NAME: ${{ secrets.BUDGET_STACK_NAME }}
+      BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
+      FUNCTION_NAME: ${{ secrets.FUNCTION_NAME }}
+      SCHEDULE_NAME: ${{ secrets.SCHEDULE_NAME }}
+      ADMIN_API_NAME: ${{ secrets.ADMIN_API_NAME }}
+      ADMIN_FUNCTION_NAME: ${{ secrets.ADMIN_FUNCTION_NAME }}
+      BUDGET_NAME: ${{ secrets.BUDGET_NAME }}
+      BUDGET_GUARD_FUNCTION_NAME: ${{ secrets.BUDGET_GUARD_FUNCTION_NAME }}
+      BUDGET_GUARD_MONTHLY_SCHEDULE_NAME: ${{ secrets.BUDGET_GUARD_MONTHLY_SCHEDULE_NAME }}
+      BUDGET_GUARD_HOURLY_SCHEDULE_NAME: ${{ secrets.BUDGET_GUARD_HOURLY_SCHEDULE_NAME }}
       COMARCH_XML_URL: ${{ secrets.COMARCH_XML_URL }}
       BL_API_TOKEN: ${{ secrets.BL_API_TOKEN }}
       BL_API_TOKEN_SSM_PARAM: ${{ secrets.BL_API_TOKEN_SSM_PARAM }}
+      BL_SYNC_STATUS_SSM_PARAM: ${{ secrets.BL_SYNC_STATUS_SSM_PARAM }}
+      BL_SYNC_CONFIG_SSM_PARAM: ${{ secrets.BL_SYNC_CONFIG_SSM_PARAM }}
+      BUDGET_FX_RATE_SSM_PARAM: ${{ secrets.BUDGET_FX_RATE_SSM_PARAM }}
+      BUDGET_GUARD_STATUS_SSM_PARAM: ${{ secrets.BUDGET_GUARD_STATUS_SSM_PARAM }}
       BL_INVENTORY_ID: ${{ secrets.BL_INVENTORY_ID }}
       BL_WAREHOUSE_ID: ${{ secrets.BL_WAREHOUSE_ID }}
       BL_API_MAX_RPM: ${{ secrets.BL_API_MAX_RPM }}
+      MAKE_PUBLIC_FEED: ${{ secrets.MAKE_PUBLIC_FEED }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       BUDGET_ALERT_EMAIL: ${{ secrets.BUDGET_ALERT_EMAIL }}
@@ -69,17 +85,37 @@ jobs:
           set -eu
           ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
           TOKEN_PARAM="${BL_API_TOKEN_SSM_PARAM:-/comarch-baselinker-sync/api-token}"
+          STATUS_PARAM="${BL_SYNC_STATUS_SSM_PARAM:-/comarch-baselinker-sync/push-sync-status}"
+          CONFIG_PARAM="${BL_SYNC_CONFIG_SSM_PARAM:-/comarch-baselinker-sync/sync-config}"
+          FX_PARAM="${BUDGET_FX_RATE_SSM_PARAM:-/comarch-baselinker-sync/usd-pln-rate}"
+          GUARD_PARAM="${BUDGET_GUARD_STATUS_SSM_PARAM:-/comarch-baselinker-sync/budget-guard-status}"
           RPM="${BL_API_MAX_RPM:-90}"
           LIMIT="${BUDGET_LIMIT_USD:-30}"
+          PUBLIC_FEED="${MAKE_PUBLIC_FEED:-false}"
           PASSWORD_HASH="$(python -c 'import hashlib,os; print(hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest())')"
-          BUCKET_NAME="comarch-baselinker-sync-${ACCOUNT_ID}-${AWS_REGION}"
+          EFFECTIVE_BUCKET_NAME="${BUCKET_NAME:-comarch-baselinker-sync-${ACCOUNT_ID}-${AWS_REGION}}"
           {
             echo "AWS_ACCOUNT_ID=$ACCOUNT_ID"
+            echo "PIPELINE_STACK_NAME_EFFECTIVE=${PIPELINE_STACK_NAME:-ComarchBaseLinkerSyncStack}"
+            echo "BUDGET_STACK_NAME_EFFECTIVE=${BUDGET_STACK_NAME:-ComarchBaseLinkerBudgetStack}"
+            echo "BUCKET_NAME_EFFECTIVE=$EFFECTIVE_BUCKET_NAME"
+            echo "FUNCTION_NAME_EFFECTIVE=${FUNCTION_NAME:-comarch-baselinker-sync}"
+            echo "SCHEDULE_NAME_EFFECTIVE=${SCHEDULE_NAME:-comarch-baselinker-sync-midnight}"
+            echo "ADMIN_API_NAME_EFFECTIVE=${ADMIN_API_NAME:-comarch-baselinker-sync-admin-api}"
+            echo "ADMIN_FUNCTION_NAME_EFFECTIVE=${ADMIN_FUNCTION_NAME:-comarch-baselinker-sync-admin}"
+            echo "BUDGET_NAME_EFFECTIVE=${BUDGET_NAME:-comarch-baselinker-sync-monthly-budget}"
+            echo "BUDGET_GUARD_FUNCTION_NAME_EFFECTIVE=${BUDGET_GUARD_FUNCTION_NAME:-comarch-baselinker-budget-guard}"
+            echo "BUDGET_GUARD_MONTHLY_SCHEDULE_NAME_EFFECTIVE=${BUDGET_GUARD_MONTHLY_SCHEDULE_NAME:-comarch-baselinker-budget-guard-monthly-enable}"
+            echo "BUDGET_GUARD_HOURLY_SCHEDULE_NAME_EFFECTIVE=${BUDGET_GUARD_HOURLY_SCHEDULE_NAME:-comarch-baselinker-budget-guard-hourly-check}"
             echo "BL_API_TOKEN_SSM_PARAM_EFFECTIVE=$TOKEN_PARAM"
+            echo "BL_SYNC_STATUS_SSM_PARAM_EFFECTIVE=$STATUS_PARAM"
+            echo "BL_SYNC_CONFIG_SSM_PARAM_EFFECTIVE=$CONFIG_PARAM"
+            echo "BUDGET_FX_RATE_SSM_PARAM_EFFECTIVE=$FX_PARAM"
+            echo "BUDGET_GUARD_STATUS_SSM_PARAM_EFFECTIVE=$GUARD_PARAM"
             echo "BL_API_MAX_RPM_EFFECTIVE=$RPM"
+            echo "MAKE_PUBLIC_FEED_EFFECTIVE=$PUBLIC_FEED"
             echo "BUDGET_LIMIT_USD_EFFECTIVE=$LIMIT"
             echo "ADMIN_PASSWORD_HASH=$PASSWORD_HASH"
-            echo "BUCKET_NAME=$BUCKET_NAME"
           } >> "$GITHUB_ENV"
 
       - name: Store BaseLinker token in SSM
@@ -99,15 +135,33 @@ jobs:
         working-directory: cdk_app
         shell: bash
         run: |
-          npx --yes aws-cdk@2 deploy --all --require-approval never \
+          npx --yes aws-cdk@2 deploy \
+            "$PIPELINE_STACK_NAME_EFFECTIVE" \
+            "$BUDGET_STACK_NAME_EFFECTIVE" \
+            --require-approval never \
             -c account="$AWS_ACCOUNT_ID" \
             -c region="$AWS_REGION" \
+            -c pipelineStackName="$PIPELINE_STACK_NAME_EFFECTIVE" \
+            -c budgetStackName="$BUDGET_STACK_NAME_EFFECTIVE" \
             -c comarchUrl="$COMARCH_XML_URL" \
-            -c bucketName="$BUCKET_NAME" \
+            -c bucketName="$BUCKET_NAME_EFFECTIVE" \
+            -c functionName="$FUNCTION_NAME_EFFECTIVE" \
+            -c scheduleName="$SCHEDULE_NAME_EFFECTIVE" \
+            -c adminApiName="$ADMIN_API_NAME_EFFECTIVE" \
+            -c adminFunctionName="$ADMIN_FUNCTION_NAME_EFFECTIVE" \
+            -c budgetName="$BUDGET_NAME_EFFECTIVE" \
+            -c budgetGuardFunctionName="$BUDGET_GUARD_FUNCTION_NAME_EFFECTIVE" \
+            -c budgetGuardMonthlyScheduleName="$BUDGET_GUARD_MONTHLY_SCHEDULE_NAME_EFFECTIVE" \
+            -c budgetGuardHourlyScheduleName="$BUDGET_GUARD_HOURLY_SCHEDULE_NAME_EFFECTIVE" \
             -c blApiTokenSsmParam="$BL_API_TOKEN_SSM_PARAM_EFFECTIVE" \
+            -c blSyncStatusSsmParam="$BL_SYNC_STATUS_SSM_PARAM_EFFECTIVE" \
+            -c blSyncConfigSsmParam="$BL_SYNC_CONFIG_SSM_PARAM_EFFECTIVE" \
+            -c budgetFxRateSsmParam="$BUDGET_FX_RATE_SSM_PARAM_EFFECTIVE" \
+            -c budgetGuardStatusSsmParam="$BUDGET_GUARD_STATUS_SSM_PARAM_EFFECTIVE" \
             -c blInventoryId="$BL_INVENTORY_ID" \
             -c blWarehouseId="$BL_WAREHOUSE_ID" \
             -c blApiMaxRpm="$BL_API_MAX_RPM_EFFECTIVE" \
+            -c makePublicFeed="$MAKE_PUBLIC_FEED_EFFECTIVE" \
             -c adminUsername="$ADMIN_USERNAME" \
             -c adminPasswordHash="$ADMIN_PASSWORD_HASH" \
             -c budgetAlertEmail="${BUDGET_ALERT_EMAIL:-}" \

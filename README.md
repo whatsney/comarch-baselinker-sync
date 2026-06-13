@@ -69,12 +69,28 @@ The deployment workflow reads these GitHub Actions secrets:
 | `AWS_ACCESS_KEY_ID` | AWS deployment credentials |
 | `AWS_SECRET_ACCESS_KEY` | AWS deployment credentials |
 | `AWS_REGION` | Deployment region, for example `eu-north-1` |
+| `PIPELINE_STACK_NAME` | Existing or new CDK pipeline stack name |
+| `BUDGET_STACK_NAME` | Existing or new CDK budget stack name |
+| `BUCKET_NAME` | Existing or new S3 bucket name |
+| `FUNCTION_NAME` | Main Lambda name |
+| `SCHEDULE_NAME` | Daily EventBridge Scheduler name |
+| `ADMIN_API_NAME` | Admin HTTP API name |
+| `ADMIN_FUNCTION_NAME` | Admin Lambda name |
+| `BUDGET_NAME` | AWS Budget name |
+| `BUDGET_GUARD_FUNCTION_NAME` | Budget guard Lambda name |
+| `BUDGET_GUARD_MONTHLY_SCHEDULE_NAME` | Monthly reset schedule |
+| `BUDGET_GUARD_HOURLY_SCHEDULE_NAME` | Hourly budget check schedule |
 | `COMARCH_XML_URL` | Private Comarch XML export URL |
 | `BL_API_TOKEN` | BaseLinker API token |
 | `BL_API_TOKEN_SSM_PARAM` | SecureString parameter path |
+| `BL_SYNC_STATUS_SSM_PARAM` | SSM synchronization status path |
+| `BL_SYNC_CONFIG_SSM_PARAM` | SSM runtime configuration path |
+| `BUDGET_FX_RATE_SSM_PARAM` | SSM USD/PLN rate path |
+| `BUDGET_GUARD_STATUS_SSM_PARAM` | SSM budget guard status path |
 | `BL_INVENTORY_ID` | Target BaseLinker inventory |
 | `BL_WAREHOUSE_ID` | Target BaseLinker warehouse |
 | `BL_API_MAX_RPM` | Request limit, normally below BaseLinker's hard limit |
+| `MAKE_PUBLIC_FEED` | Keep `false` unless public S3 access is intentional |
 | `ADMIN_USERNAME` | Admin panel username |
 | `ADMIN_PASSWORD` | Admin panel password |
 | `BUDGET_ALERT_EMAIL` | AWS Budget notification address |

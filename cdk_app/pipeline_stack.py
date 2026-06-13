@@ -63,6 +63,14 @@ class ComarchBaseLinkerPipelineStack(Stack):
         budget_usd_to_pln_rate = ctx("budgetUsdToPlnRate", "4.00")
         budget_fx_rate_ssm_param = ctx("budgetFxRateSsmParam", "/comarch-baselinker-sync/usd-pln-rate")
         budget_guard_function_name = ctx("budgetGuardFunctionName", "comarch-baselinker-budget-guard")
+        budget_guard_monthly_schedule_name = ctx(
+            "budgetGuardMonthlyScheduleName",
+            "comarch-baselinker-budget-guard-monthly-enable",
+        )
+        budget_guard_hourly_schedule_name = ctx(
+            "budgetGuardHourlyScheduleName",
+            "comarch-baselinker-budget-guard-hourly-check",
+        )
         budget_guard_status_ssm_param = ctx(
             "budgetGuardStatusSsmParam",
             "/comarch-baselinker-sync/budget-guard-status",
@@ -396,7 +404,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
         scheduler.CfnSchedule(
             self,
             "BudgetGuardMonthlyEnableSchedule",
-            name="comarch-baselinker-budget-guard-monthly-enable",
+            name=budget_guard_monthly_schedule_name,
             group_name="default",
             state="ENABLED",
             schedule_expression="cron(5 0 1 * ? *)",
@@ -415,7 +423,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
         scheduler.CfnSchedule(
             self,
             "BudgetGuardHourlyCheckSchedule",
-            name="comarch-baselinker-budget-guard-hourly-check",
+            name=budget_guard_hourly_schedule_name,
             group_name="default",
             state="ENABLED",
             schedule_expression="cron(0 * * * ? *)",

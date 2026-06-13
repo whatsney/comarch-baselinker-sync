@@ -18,15 +18,24 @@ region = (
 if not account:
     raise ValueError("AWS account is required through CDK context or CDK_DEFAULT_ACCOUNT.")
 
+pipeline_stack_name = (
+    app.node.try_get_context("pipelineStackName")
+    or "ComarchBaseLinkerSyncStack"
+)
+budget_stack_name = (
+    app.node.try_get_context("budgetStackName")
+    or "ComarchBaseLinkerBudgetStack"
+)
+
 ComarchBaseLinkerPipelineStack(
     app,
-    "ComarchBaseLinkerSyncStack",
+    pipeline_stack_name,
     env=cdk.Environment(account=account, region=region),
 )
 
 ComarchBaseLinkerBudgetStack(
     app,
-    "ComarchBaseLinkerBudgetStack",
+    budget_stack_name,
     synthesizer=cdk.BootstraplessSynthesizer(),
     env=cdk.Environment(account=account, region="us-east-1"),
 )
