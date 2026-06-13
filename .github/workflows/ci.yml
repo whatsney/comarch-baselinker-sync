@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt -r cdk_app/requirements.txt
+
+      - name: Run unit tests
+        env:
+          AWS_DEFAULT_REGION: eu-north-1
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: python -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Compile Python sources
+        run: python -m compileall -q src admin_src budget_guard_src cdk_app tests
+
+      - name: Check repository safety
+        run: python scripts/check_public_safety.py
+
+      - name: Synthesize CDK
+        working-directory: cdk_app
+        run: |
+          npx --yes aws-cdk@2 synth \
+            -c account=111111111111 \
+            -c region=eu-north-1 \
+            -c comarchUrl=https://shop.example.com/xml?id=example \
+            -c bucketName=comarch-baselinker-sync-ci-example \
+            -c blInventoryId=12345 \
+            -c blWarehouseId=bl_12345 \
+            -c adminPasswordHash=0000000000000000000000000000000000000000000000000000000000000000

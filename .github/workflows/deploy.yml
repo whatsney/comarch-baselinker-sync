@@ -1,0 +1,114 @@
+name: Deploy to AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to confirm
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ inputs.confirmation == 'DEPLOY' }}
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      COMARCH_XML_URL: ${{ secrets.COMARCH_XML_URL }}
+      BL_API_TOKEN: ${{ secrets.BL_API_TOKEN }}
+      BL_API_TOKEN_SSM_PARAM: ${{ secrets.BL_API_TOKEN_SSM_PARAM }}
+      BL_INVENTORY_ID: ${{ secrets.BL_INVENTORY_ID }}
+      BL_WAREHOUSE_ID: ${{ secrets.BL_WAREHOUSE_ID }}
+      BL_API_MAX_RPM: ${{ secrets.BL_API_MAX_RPM }}
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      BUDGET_ALERT_EMAIL: ${{ secrets.BUDGET_ALERT_EMAIL }}
+      BUDGET_LIMIT_USD: ${{ secrets.BUDGET_LIMIT_USD }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt -r cdk_app/requirements.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -eu
+          for name in AWS_REGION COMARCH_XML_URL BL_API_TOKEN BL_INVENTORY_ID \
+            BL_WAREHOUSE_ID ADMIN_USERNAME ADMIN_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is not configured"
+              exit 1
+            fi
+          done
+
+      - name: Prepare deployment values
+        shell: bash
+        run: |
+          set -eu
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          TOKEN_PARAM="${BL_API_TOKEN_SSM_PARAM:-/comarch-baselinker-sync/api-token}"
+          RPM="${BL_API_MAX_RPM:-90}"
+          LIMIT="${BUDGET_LIMIT_USD:-30}"
+          PASSWORD_HASH="$(python -c 'import hashlib,os; print(hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest())')"
+          BUCKET_NAME="comarch-baselinker-sync-${ACCOUNT_ID}-${AWS_REGION}"
+          {
+            echo "AWS_ACCOUNT_ID=$ACCOUNT_ID"
+            echo "BL_API_TOKEN_SSM_PARAM_EFFECTIVE=$TOKEN_PARAM"
+            echo "BL_API_MAX_RPM_EFFECTIVE=$RPM"
+            echo "BUDGET_LIMIT_USD_EFFECTIVE=$LIMIT"
+            echo "ADMIN_PASSWORD_HASH=$PASSWORD_HASH"
+            echo "BUCKET_NAME=$BUCKET_NAME"
+          } >> "$GITHUB_ENV"
+
+      - name: Store BaseLinker token in SSM
+        shell: bash
+        run: |
+          aws ssm put-parameter \
+            --name "$BL_API_TOKEN_SSM_PARAM_EFFECTIVE" \
+            --type SecureString \
+            --value "$BL_API_TOKEN" \
+            --overwrite >/dev/null
+
+      - name: Bootstrap CDK
+        working-directory: cdk_app
+        run: npx --yes aws-cdk@2 bootstrap "aws://${AWS_ACCOUNT_ID}/${AWS_REGION}"
+
+      - name: Deploy infrastructure
+        working-directory: cdk_app
+        shell: bash
+        run: |
+          npx --yes aws-cdk@2 deploy --all --require-approval never \
+            -c account="$AWS_ACCOUNT_ID" \
+            -c region="$AWS_REGION" \
+            -c comarchUrl="$COMARCH_XML_URL" \
+            -c bucketName="$BUCKET_NAME" \
+            -c blApiTokenSsmParam="$BL_API_TOKEN_SSM_PARAM_EFFECTIVE" \
+            -c blInventoryId="$BL_INVENTORY_ID" \
+            -c blWarehouseId="$BL_WAREHOUSE_ID" \
+            -c blApiMaxRpm="$BL_API_MAX_RPM_EFFECTIVE" \
+            -c adminUsername="$ADMIN_USERNAME" \
+            -c adminPasswordHash="$ADMIN_PASSWORD_HASH" \
+            -c budgetAlertEmail="${BUDGET_ALERT_EMAIL:-}" \
+            -c budgetLimitUsd="$BUDGET_LIMIT_USD_EFFECTIVE"

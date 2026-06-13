@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<items>
+{% foreach p in products -%}
+  {% assign parent_id = p.ParentId | ToString -%}
+  {% if parent_id == '' -%}{% assign parent_id = '0' -%}{% endif -%}
+
+  {% assign ean = p.UPC | ToString -%}
+  {% if ean == '' -%}{% assign ean = p.Ean | ToString -%}{% endif -%}
+
+  {% assign name = p.NameNoHtml | ToString -%}
+  {% if name == '' -%}{% assign name = p.Name | ToString -%}{% endif -%}
+
+  {% assign description = p.DescriptionNoHtml | ToString -%}
+  {% if description == '' and p.Description != null -%}{% assign description = p.Description | StripHtml -%}{% endif -%}
+
+  {% assign category = p.GroupPath | ToString -%}
+  {% if category == '' and p.DefaultGroup != null and p.DefaultGroup.Heading != null -%}{% assign category = p.DefaultGroup.Heading | ToString -%}{% endif -%}
+  {% if category == '' -%}{% assign category = p.GroupName | ToString -%}{% endif -%}
+
+  {% assign manufacturer = '' -%}
+  {% if p.Manufacturer != null and p.Manufacturer.Name != null -%}{% assign manufacturer = p.Manufacturer.Name | ToString -%}{% endif -%}
+  {% if manufacturer == '' -%}{% assign manufacturer = p.Manufacturer | ToString -%}{% endif -%}
+  {% if manufacturer == '' and p.Brand != null and p.Brand.Name != null -%}{% assign manufacturer = p.Brand.Name | ToString -%}{% endif -%}
+  {% if manufacturer == '' -%}{% assign manufacturer = p.Brand | ToString -%}{% endif -%}
+
+  {% assign qty = 0 -%}
+  {% if p.StockLevel != null -%}{% assign qty = p.StockLevel | ToInt -%}{% endif -%}
+
+  {% assign main_image = p.ImageUrl | ToString -%}
+  {% if main_image == '' and p.Image != null and p.Image.Url != null -%}{% assign main_image = p.Image.Url | ToString -%}{% endif -%}
+  {% if main_image == '' and p.Image != null and p.Image.Link != null -%}{% assign main_image = p.Image.Link | ToString -%}{% endif -%}
+  {% if main_image == '' and p.Images[0] != null and p.Images[0].Url != null -%}{% assign main_image = p.Images[0].Url | ToString -%}{% endif -%}
+  {% if main_image == '' and p.Images[0] != null and p.Images[0].Link != null -%}{% assign main_image = p.Images[0].Link | ToString -%}{% endif -%}
+
+  {% assign tax_rate = p.VAT | ToString -%}
+  {% if tax_rate == '' -%}{% assign tax_rate = '23' -%}{% endif -%}
+
+  {% assign weight = p.Weight | ToString -%}
+  {% if weight == '' -%}{% assign weight = '0' -%}{% endif -%}
+
+  {% assign width = '0' -%}
+  {% assign height = '0' -%}
+  {% assign length = '0' -%}
+  {% if p.Dimensions != null -%}
+    {% if p.Dimensions.Width != null -%}{% assign width = p.Dimensions.Width | ToString -%}{% endif -%}
+    {% if p.Dimensions.Height != null -%}{% assign height = p.Dimensions.Height | ToString -%}{% endif -%}
+    {% if p.Dimensions.Length != null -%}{% assign length = p.Dimensions.Length | ToString -%}{% endif -%}
+  {% endif -%}
+
+<item>
+  <id>{{ p.Id }}</id>
+  <parent_id>{{ parent_id }}</parent_id>
+  <name>{{ name | Escape }}</name>
+  <quantity>{{ qty }}</quantity>
+  <ean>{{ ean | Escape }}</ean>
+  <sku>{{ p.Code | Escape }}</sku>
+  <category_name>{{ category | Escape }}</category_name>
+  <manufacturer_name>{{ manufacturer | Escape }}</manufacturer_name>
+  <price>{{ p.TotalPrice }}</price>
+  <purchase_price>{% if p.PurchasePrice != null -%}{{ p.PurchasePrice }}{% endif -%}</purchase_price>
+  <tax_rate>{{ tax_rate }}</tax_rate>
+  <weight>{{ weight }}</weight>
+  <width>{{ width }}</width>
+  <height>{{ height }}</height>
+  <length>{{ length }}</length>
+  <description>{{ description | Escape }}</description>
+  <description_extra_1></description_extra_1>
+  <description_extra_2></description_extra_2>
+  <image>{{ main_image | Escape }}</image>
+
+  <image_extra_1>{% if p.Images[0] != null and p.Images[0].Url != null -%}{{ p.Images[0].Url | Escape }}{% elsif p.Images[0] != null and p.Images[0].Link != null -%}{{ p.Images[0].Link | Escape }}{% endif -%}</image_extra_1>
+  <image_extra_2>{% if p.Images[1] != null and p.Images[1].Url != null -%}{{ p.Images[1].Url | Escape }}{% elsif p.Images[1] != null and p.Images[1].Link != null -%}{{ p.Images[1].Link | Escape }}{% endif -%}</image_extra_2>
+  <image_extra_3>{% if p.Images[2] != null and p.Images[2].Url != null -%}{{ p.Images[2].Url | Escape }}{% elsif p.Images[2] != null and p.Images[2].Link != null -%}{{ p.Images[2].Link | Escape }}{% endif -%}</image_extra_3>
+  <image_extra_4>{% if p.Images[3] != null and p.Images[3].Url != null -%}{{ p.Images[3].Url | Escape }}{% elsif p.Images[3] != null and p.Images[3].Link != null -%}{{ p.Images[3].Link | Escape }}{% endif -%}</image_extra_4>
+  <image_extra_5>{% if p.Images[4] != null and p.Images[4].Url != null -%}{{ p.Images[4].Url | Escape }}{% elsif p.Images[4] != null and p.Images[4].Link != null -%}{{ p.Images[4].Link | Escape }}{% endif -%}</image_extra_5>
+  <image_extra_6>{% if p.Images[5] != null and p.Images[5].Url != null -%}{{ p.Images[5].Url | Escape }}{% elsif p.Images[5] != null and p.Images[5].Link != null -%}{{ p.Images[5].Link | Escape }}{% endif -%}</image_extra_6>
+  <image_extra_7>{% if p.Images[6] != null and p.Images[6].Url != null -%}{{ p.Images[6].Url | Escape }}{% elsif p.Images[6] != null and p.Images[6].Link != null -%}{{ p.Images[6].Link | Escape }}{% endif -%}</image_extra_7>
+  <image_extra_8>{% if p.Images[7] != null and p.Images[7].Url != null -%}{{ p.Images[7].Url | Escape }}{% elsif p.Images[7] != null and p.Images[7].Link != null -%}{{ p.Images[7].Link | Escape }}{% endif -%}</image_extra_8>
+  <image_extra_9>{% if p.Images[8] != null and p.Images[8].Url != null -%}{{ p.Images[8].Url | Escape }}{% elsif p.Images[8] != null and p.Images[8].Link != null -%}{{ p.Images[8].Link | Escape }}{% endif -%}</image_extra_9>
+  <image_extra_10>{% if p.Images[9] != null and p.Images[9].Url != null -%}{{ p.Images[9].Url | Escape }}{% elsif p.Images[9] != null and p.Images[9].Link != null -%}{{ p.Images[9].Link | Escape }}{% endif -%}</image_extra_10>
+  <image_extra_11>{% if p.Images[10] != null and p.Images[10].Url != null -%}{{ p.Images[10].Url | Escape }}{% elsif p.Images[10] != null and p.Images[10].Link != null -%}{{ p.Images[10].Link | Escape }}{% endif -%}</image_extra_11>
+  <image_extra_12>{% if p.Images[11] != null and p.Images[11].Url != null -%}{{ p.Images[11].Url | Escape }}{% elsif p.Images[11] != null and p.Images[11].Link != null -%}{{ p.Images[11].Link | Escape }}{% endif -%}</image_extra_12>
+  <image_extra_13>{% if p.Images[12] != null and p.Images[12].Url != null -%}{{ p.Images[12].Url | Escape }}{% elsif p.Images[12] != null and p.Images[12].Link != null -%}{{ p.Images[12].Link | Escape }}{% endif -%}</image_extra_13>
+  <image_extra_14>{% if p.Images[13] != null and p.Images[13].Url != null -%}{{ p.Images[13].Url | Escape }}{% elsif p.Images[13] != null and p.Images[13].Link != null -%}{{ p.Images[13].Link | Escape }}{% endif -%}</image_extra_14>
+  <image_extra_15>{% if p.Images[14] != null and p.Images[14].Url != null -%}{{ p.Images[14].Url | Escape }}{% elsif p.Images[14] != null and p.Images[14].Link != null -%}{{ p.Images[14].Link | Escape }}{% endif -%}</image_extra_15>
+
+  <attributes>
+    {% foreach a in p.Attributes -%}
+      {% assign av = '' -%}
+      {% if a.Values != null -%}{% assign av = a.Values | Join: ',' -%}{% endif -%}
+      {% if av == '' and a.Value != null -%}{% assign av = a.Value | ToString -%}{% endif -%}
+    <attribute>
+      <attribute_name>{{ a.Name | Escape }}</attribute_name>
+      <attribute_value>{{ av | Escape }}</attribute_value>
+    </attribute>
+    {% endforeach -%}
+  </attributes>
+</item>
+{% endforeach -%}
+</items>
