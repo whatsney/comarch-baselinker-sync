@@ -40,7 +40,7 @@ class TestAdminStatusSummary(unittest.TestCase):
         self.assertEqual(out["sync_stage"], "pre_audit")
         self.assertEqual(out["steps"][0]["status"], "running")
         self.assertEqual(out["steps"][1]["status"], "waiting")
-        self.assertEqual(out["steps"][0]["summary"], "Sprawdzamy, co trzeba zmienić.")
+        self.assertEqual(out["steps"][0]["summary"], "Checking what needs to change.")
         self.assertFalse(out["pre_audit_executed"])
 
     def test_running_sync_progress_keeps_sync_step_active(self):
@@ -107,6 +107,33 @@ class TestAdminStatusSummary(unittest.TestCase):
 
 
 class TestAdminBranding(unittest.TestCase):
+    def test_default_locale_is_english(self):
+        page = admin._page()
+
+        self.assertIn('<html lang="en">', page)
+        self.assertIn("Refresh data", page)
+        self.assertIn("Start synchronization", page)
+        self.assertIn("Calculating differences before synchronization", page)
+
+    def test_polish_locale_translates_page_and_status_summary(self):
+        with patch.object(admin, "ADMIN_LOCALE", "pl"):
+            page = admin._page()
+            summary = admin._summarize_status({"status": "running", "progress": {}})
+
+        self.assertIn('<html lang="pl">', page)
+        self.assertIn("Odśwież dane", page)
+        self.assertIn("Uruchom aktualizację", page)
+        self.assertEqual(
+            summary["steps"][0]["summary"],
+            "Sprawdzamy, co trzeba zmienić.",
+        )
+
+    def test_translation_catalogs_have_matching_keys(self):
+        self.assertEqual(
+            set(admin.TRANSLATIONS["en"]),
+            set(admin.TRANSLATIONS["pl"]),
+        )
+
     def test_private_branding_is_rendered_and_escaped(self):
         with patch.object(admin, "BRAND_NAME", 'Example <Store>'):
             with patch.object(admin, "BRAND_PANEL_TITLE", "Catalog sync"):
@@ -117,7 +144,7 @@ class TestAdminBranding(unittest.TestCase):
                                 with patch.object(admin, "BRAND_LOGO_ENABLED", True):
                                     page = admin._page()
 
-        self.assertIn("Example &lt;Store&gt; - synchronizacja", page)
+        self.assertIn("Example &lt;Store&gt; - synchronization", page)
         self.assertIn('<img src="/assets/client-logo.png"', page)
         self.assertIn("--orange: #112233", page)
         self.assertIn("--orange-dark: #223344", page)

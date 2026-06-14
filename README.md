@@ -58,7 +58,8 @@ CDK, not the Serverless Framework.
 
 - Technical documentation, source code, identifiers, comments, logs, workflow
   messages, and backend-facing errors use English.
-- Polish is used only for end-user text in the administration panel.
+- The administration panel defaults to English and supports `en` and `pl`
+  through the `CLIENT_LOCALE` deployment secret.
 - Customer-specific names, colors, titles, and logos are deployment inputs and
   are not stored in the public repository.
 
@@ -109,6 +110,7 @@ The deployment workflow reads these GitHub Actions secrets:
 | `CLIENT_BRAND_NAME` | Private customer display name |
 | `CLIENT_PANEL_TITLE` | Private admin panel heading |
 | `CLIENT_PANEL_SUBTITLE` | Private admin panel subtitle |
+| `CLIENT_LOCALE` | Administration panel language: `en` (default) or `pl` |
 | `CLIENT_PRIMARY_COLOR` | Customer primary color as six-digit hex |
 | `CLIENT_PRIMARY_DARK_COLOR` | Dark primary color as six-digit hex |
 | `CLIENT_SECONDARY_COLOR` | Customer secondary color as six-digit hex |

@@ -48,6 +48,7 @@ jobs:
       CLIENT_BRAND_NAME: ${{ secrets.CLIENT_BRAND_NAME }}
       CLIENT_PANEL_TITLE: ${{ secrets.CLIENT_PANEL_TITLE }}
       CLIENT_PANEL_SUBTITLE: ${{ secrets.CLIENT_PANEL_SUBTITLE }}
+      CLIENT_LOCALE: ${{ secrets.CLIENT_LOCALE }}
       CLIENT_PRIMARY_COLOR: ${{ secrets.CLIENT_PRIMARY_COLOR }}
       CLIENT_PRIMARY_DARK_COLOR: ${{ secrets.CLIENT_PRIMARY_DARK_COLOR }}
       CLIENT_SECONDARY_COLOR: ${{ secrets.CLIENT_SECONDARY_COLOR }}
@@ -100,8 +101,13 @@ jobs:
           LIMIT="${BUDGET_LIMIT_USD:-30}"
           PUBLIC_FEED="${MAKE_PUBLIC_FEED:-false}"
           BRAND_NAME="${CLIENT_BRAND_NAME:-Comarch → BaseLinker Sync}"
-          PANEL_TITLE="${CLIENT_PANEL_TITLE:-Synchronizacja produktów}"
-          PANEL_SUBTITLE="${CLIENT_PANEL_SUBTITLE:-Podgląd i ręczne uruchamianie synchronizacji produktów}"
+          PANEL_TITLE="${CLIENT_PANEL_TITLE:-Product synchronization}"
+          PANEL_SUBTITLE="${CLIENT_PANEL_SUBTITLE:-Status and manual product synchronization}"
+          LOCALE="${CLIENT_LOCALE:-en}"
+          if [ "$LOCALE" != "en" ] && [ "$LOCALE" != "pl" ]; then
+            echo "::error::CLIENT_LOCALE must be en or pl"
+            exit 1
+          fi
           PRIMARY_COLOR="${CLIENT_PRIMARY_COLOR:-#1673b8}"
           PRIMARY_DARK_COLOR="${CLIENT_PRIMARY_DARK_COLOR:-#0f5d96}"
           SECONDARY_COLOR="${CLIENT_SECONDARY_COLOR:-#183c5c}"
@@ -136,6 +142,7 @@ jobs:
             echo "CLIENT_BRAND_NAME_EFFECTIVE=$BRAND_NAME"
             echo "CLIENT_PANEL_TITLE_EFFECTIVE=$PANEL_TITLE"
             echo "CLIENT_PANEL_SUBTITLE_EFFECTIVE=$PANEL_SUBTITLE"
+            echo "CLIENT_LOCALE_EFFECTIVE=$LOCALE"
             echo "CLIENT_PRIMARY_COLOR_EFFECTIVE=$PRIMARY_COLOR"
             echo "CLIENT_PRIMARY_DARK_COLOR_EFFECTIVE=$PRIMARY_DARK_COLOR"
             echo "CLIENT_SECONDARY_COLOR_EFFECTIVE=$SECONDARY_COLOR"
@@ -216,6 +223,7 @@ jobs:
             -c brandName="$CLIENT_BRAND_NAME_EFFECTIVE" \
             -c brandPanelTitle="$CLIENT_PANEL_TITLE_EFFECTIVE" \
             -c brandPanelSubtitle="$CLIENT_PANEL_SUBTITLE_EFFECTIVE" \
+            -c brandLocale="$CLIENT_LOCALE_EFFECTIVE" \
             -c brandPrimaryColor="$CLIENT_PRIMARY_COLOR_EFFECTIVE" \
             -c brandPrimaryDarkColor="$CLIENT_PRIMARY_DARK_COLOR_EFFECTIVE" \
             -c brandSecondaryColor="$CLIENT_SECONDARY_COLOR_EFFECTIVE" \

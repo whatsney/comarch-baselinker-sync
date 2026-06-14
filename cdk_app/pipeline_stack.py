@@ -59,11 +59,14 @@ class ComarchBaseLinkerPipelineStack(Stack):
         admin_username = ctx("adminUsername", "admin")
         admin_password_hash = ctx("adminPasswordHash", required=True)
         brand_name = ctx("brandName", "Comarch → BaseLinker Sync")
-        brand_panel_title = ctx("brandPanelTitle", "Synchronizacja produktów")
+        brand_panel_title = ctx("brandPanelTitle", "Product synchronization")
         brand_panel_subtitle = ctx(
             "brandPanelSubtitle",
-            "Podgląd i ręczne uruchamianie synchronizacji produktów",
+            "Status and manual product synchronization",
         )
+        brand_locale = ctx("brandLocale", "en").strip().lower()
+        if brand_locale not in {"en", "pl"}:
+            raise ValueError("brandLocale must be 'en' or 'pl'.")
         brand_primary_color = ctx("brandPrimaryColor", "#1673b8")
         brand_primary_dark_color = ctx("brandPrimaryDarkColor", "#0f5d96")
         brand_secondary_color = ctx("brandSecondaryColor", "#183c5c")
@@ -478,6 +481,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 "BRAND_NAME": brand_name,
                 "BRAND_PANEL_TITLE": brand_panel_title,
                 "BRAND_PANEL_SUBTITLE": brand_panel_subtitle,
+                "ADMIN_LOCALE": brand_locale,
                 "BRAND_PRIMARY_COLOR": brand_primary_color,
                 "BRAND_PRIMARY_DARK_COLOR": brand_primary_dark_color,
                 "BRAND_SECONDARY_COLOR": brand_secondary_color,

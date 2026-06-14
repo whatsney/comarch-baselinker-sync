@@ -45,11 +45,14 @@ BUDGET_USD_TO_PLN_RATE = os.getenv("BUDGET_USD_TO_PLN_RATE", "4.00")
 BUDGET_FX_RATE_SSM_PARAM = os.getenv("BUDGET_FX_RATE_SSM_PARAM", "/comarch-baselinker-sync/usd-pln-rate")
 AWS_ACCOUNT_ID = os.getenv("AWS_ACCOUNT_ID", "")
 BRAND_NAME = os.getenv("BRAND_NAME", "Comarch → BaseLinker Sync")
-BRAND_PANEL_TITLE = os.getenv("BRAND_PANEL_TITLE", "Synchronizacja produktów")
+BRAND_PANEL_TITLE = os.getenv("BRAND_PANEL_TITLE", "Product synchronization")
 BRAND_PANEL_SUBTITLE = os.getenv(
     "BRAND_PANEL_SUBTITLE",
-    "Podgląd i ręczne uruchamianie synchronizacji produktów",
+    "Status and manual product synchronization",
 )
+ADMIN_LOCALE = os.getenv("ADMIN_LOCALE", "en").strip().lower()
+if ADMIN_LOCALE not in {"en", "pl"}:
+    ADMIN_LOCALE = "en"
 BRAND_PRIMARY_COLOR = os.getenv("BRAND_PRIMARY_COLOR", "#1673b8")
 BRAND_PRIMARY_DARK_COLOR = os.getenv("BRAND_PRIMARY_DARK_COLOR", "#0f5d96")
 BRAND_SECONDARY_COLOR = os.getenv("BRAND_SECONDARY_COLOR", "#183c5c")
@@ -60,6 +63,266 @@ BRAND_LOGO_ENABLED = os.getenv("BRAND_LOGO_ENABLED", "false").strip().lower() in
     "on",
 }
 LOGO_PATH = Path(__file__).with_name("client-logo.png")
+
+TRANSLATIONS = {
+    "en": {
+        "page_title_suffix": "synchronization",
+        "inventory_fallback": "Inventory {id}",
+        "warehouse_fallback": "Warehouse {id}",
+        "validation_https": "The XML URL must start with https://",
+        "validation_inventory": "Select a valid BaseLinker inventory.",
+        "validation_warehouse": "Select a valid BaseLinker warehouse.",
+        "validation_warehouse_inventory": "The selected warehouse is not assigned to the selected inventory.",
+        "validation_rpm": "The request limit must be a number from 1 to 100.",
+        "attention_post_error": "The post-sync audit failed. Notify the system administrator to review the details, or try running the synchronization again.",
+        "attention_post_diff": "The post-sync audit found {count} inconsistencies. Notify the system administrator to review the details, or try running the synchronization again.",
+        "pre_summary": "{diff} differences, {unchanged} unchanged",
+        "pre_checking": "Checking what needs to change.",
+        "pre_waiting": "Waiting for synchronization to start.",
+        "sync_skipped": "Skipped because no differences were found.",
+        "sync_deleted": "; deleted {deleted} of {target} obsolete records",
+        "sync_running": "Saved {updated} of {target} records{deleted_text}",
+        "sync_done": "Saved {updated} records{deleted_text}",
+        "sync_ready": "Ready to start after differences are calculated.",
+        "sync_waiting": "Waiting for the difference calculation.",
+        "post_skipped": "Skipped because there were no changes to apply.",
+        "post_clean": "Audit completed: no inconsistencies.",
+        "post_checking": "Checking data consistency after synchronization.",
+        "post_waiting": "Waiting for synchronization to finish.",
+        "step_pre": "Calculating differences before synchronization",
+        "step_sync": "Applying changes in BaseLinker",
+        "step_post": "Post-sync audit",
+        "summary_diff": "{count} = number of detected data issues or differences.",
+        "summary_changed": "{count} = number of records that must be created or updated in BaseLinker.",
+        "summary_missing": "{count} = records among those {changed} that are new or missing in BaseLinker.",
+        "summary_extra": "{count} = records that exist in BaseLinker but should be deleted.",
+        "summary_unchanged": "{count} = unchanged records.",
+        "summary_sync_skipped": "Synchronization was skipped because the pre-sync audit found no differences.",
+        "summary_sync_done": "Synchronization: saved {updated} records and deleted {deleted} obsolete records.",
+        "summary_post_skipped": "The post-sync audit was skipped because there were no changes to apply.",
+        "summary_post_clean": "Post-sync audit: no inconsistencies.",
+        "refresh": "Refresh data",
+        "start": "Start synchronization",
+        "label_status": "Status",
+        "label_progress": "Progress",
+        "label_eta": "Estimated completion",
+        "label_next_run": "Next run",
+        "label_cost": "Cost this month",
+        "label_completed": "What was done",
+        "label_stages": "Synchronization stages",
+        "label_settings": "Synchronization settings",
+        "label_xml": "Comarch e-Sklep XML URL",
+        "label_inventory": "BaseLinker inventory",
+        "label_warehouse": "BaseLinker warehouse",
+        "label_rpm": "Requests / min",
+        "config_note": "Changes are not saved while editing. <strong>They will be used and remembered after clicking “Start synchronization”.</strong>",
+        "footer": "The page refreshes every minute while synchronization is running.",
+        "date_locale": "en-GB",
+        "status_running": "Running",
+        "status_success": "Completed",
+        "status_error": "Error",
+        "status_unknown": "Unknown",
+        "message_started": "Synchronization started.",
+        "message_progress": "Product synchronization is running.",
+        "message_finished": "Synchronization completed.",
+        "message_queued": "Synchronization was queued.",
+        "message_already_running": "Synchronization is already running.",
+        "message_no_changes": "There were no changes to apply.",
+        "message_not_found": "The requested page or action was not found.",
+        "message_unauthorized": "Access denied. Sign in again.",
+        "error_access": "You do not have permission to perform this operation. Notify the system administrator.",
+        "error_credentials": "AWS credentials are inactive or expired. Notify the system administrator.",
+        "error_rate": "An external service limited the request rate. Try again shortly.",
+        "error_timeout": "The operation took too long. Try again shortly.",
+        "error_connection": "Could not connect to an external service. Try again shortly.",
+        "error_token": "A valid BaseLinker token is not configured. Notify the system administrator.",
+        "error_baselinker": "BaseLinker returned an error while loading data. Try again or notify the system administrator.",
+        "error_save_config": "Could not save synchronization settings. Try again or notify the system administrator.",
+        "error_load_config": "Could not load synchronization settings. Try again or notify the system administrator.",
+        "error_format": "The service returned an unexpected response. Notify the system administrator.",
+        "error_generic": "A technical problem occurred. Try again or notify the system administrator.",
+        "error_missing_fx_param": "The USD/PLN exchange-rate SSM parameter is not configured.",
+        "error_missing_account": "AWS_ACCOUNT_ID is not configured for the administration panel.",
+        "step_waiting": "waiting",
+        "step_ready": "ready",
+        "step_running": "running",
+        "step_done": "completed",
+        "step_skipped": "skipped",
+        "step_error": "requires attention",
+        "fallback_pre_waiting": "Waiting to start.",
+        "fallback_sync_waiting": "Waiting for the difference calculation.",
+        "fallback_post_waiting": "Waiting for changes to finish.",
+        "summary_placeholder": "A short summary will appear here after the differences are calculated.",
+        "progress_pre": "Calculating differences before synchronization. This may take a few minutes.",
+        "progress_post": "Checking data consistency after synchronization.",
+        "progress_no_changes": "There were no changes to apply.",
+        "progress_running": "Completed {done} of {total} changes",
+        "progress_finished": "Completed {done} changes",
+        "progress_details": "{done_text}: saved {written} records and deleted {deleted} obsolete records.",
+        "progress_inactive": "No active synchronization.",
+        "counters": "{diff} differences / {changed} to create or update / {missing} new or missing / {extra} to delete / {unchanged} unchanged",
+        "queued_pre": "Starting the pre-sync difference calculation.",
+        "queued_sync": "Waiting for the difference calculation.",
+        "queued_post": "Waiting for synchronization to finish.",
+        "queued_summary": "Synchronization started. Differences between Comarch e-Sklep and BaseLinker will be calculated first.",
+        "awaiting_status": "Waiting for the first AWS status update.",
+        "budget_error": "Could not load the budget: {error}",
+        "budget_nbp_rate": " Exchange rate from the last synchronization: NBP{date}, 1 USD = {rate} PLN.",
+        "budget_fallback_rate": " Fallback exchange rate{date}: 1 USD = {rate} PLN.",
+        "budget_summary": "{percent}% of the monthly limit. {remaining} {currency} remaining.{rate_text}",
+        "empty_warehouses": "No warehouses",
+        "empty_inventories": "No inventories",
+        "config_saved": "Settings were saved and will also be used for future synchronizations.",
+        "button_starting": "Starting...",
+        "button_loading_config": "Loading settings",
+        "button_running": "Synchronization running",
+        "button_waiting": "Waiting to start",
+        "button_refreshing": "Refreshing...",
+        "config_load_http": "Could not load settings ({status})",
+        "status_load_http": "Could not load data ({status})",
+        "sync_start_http": "Could not start synchronization ({status})",
+        "updated_at": "Last update: {date} ({seconds}s ago)",
+        "schedule_enabled": "Schedule is enabled",
+        "schedule_disabled": "Schedule is disabled",
+        "run_id": "Run ID: {id}",
+        "currency_pln": "PLN",
+        "budget_rate_date": " dated {date}",
+        "budget_rate_saved": " saved {date}",
+    },
+    "pl": {
+        "page_title_suffix": "synchronizacja",
+        "inventory_fallback": "Katalog {id}",
+        "warehouse_fallback": "Magazyn {id}",
+        "validation_https": "Adres XML musi zaczynać się od https://",
+        "validation_inventory": "Wybierz poprawny katalog Baselinker.",
+        "validation_warehouse": "Wybierz poprawny magazyn Baselinker.",
+        "validation_warehouse_inventory": "Wybrany magazyn nie jest przypisany do wybranego katalogu.",
+        "validation_rpm": "Limit zapytań musi być liczbą od 1 do 100.",
+        "attention_post_error": "Kontrola po aktualizacji zakończyła się błędem. Powiadom administratora systemu, żeby sprawdził szczegóły, albo spróbuj uruchomić aktualizację jeszcze raz.",
+        "attention_post_diff": "Po aktualizacji wykryto {count} niespójności. Powiadom administratora systemu, żeby sprawdził szczegóły, albo spróbuj uruchomić aktualizację jeszcze raz.",
+        "pre_summary": "{diff} różnic, {unchanged} bez zmian",
+        "pre_checking": "Sprawdzamy, co trzeba zmienić.",
+        "pre_waiting": "Czeka na uruchomienie aktualizacji.",
+        "sync_skipped": "Pominięto, bo nie znaleziono różnic.",
+        "sync_deleted": "; usunięto {deleted} z {target} zbędnych rekordów",
+        "sync_running": "Zapisano {updated} z {target} rekordów{deleted_text}",
+        "sync_done": "Zapisano {updated} rekordów{deleted_text}",
+        "sync_ready": "Gotowe do rozpoczęcia po policzeniu różnic.",
+        "sync_waiting": "Czeka na wynik liczenia różnic.",
+        "post_skipped": "Pominięto, bo nie było żadnych zmian do wykonania.",
+        "post_clean": "Kontrola zakończona: brak niespójności.",
+        "post_checking": "Sprawdzamy, czy dane po aktualizacji są zgodne.",
+        "post_waiting": "Czeka na zakończenie aktualizacji.",
+        "step_pre": "Liczenie różnic przed aktualizacją",
+        "step_sync": "Wprowadzanie zmian w Baselinkerze",
+        "step_post": "Kontrola po aktualizacji",
+        "summary_diff": "{count} = liczba wykrytych problemów/rozjazdów w danych.",
+        "summary_changed": "{count} = liczba rekordów, które trzeba utworzyć albo zaktualizować w BL.",
+        "summary_missing": "{count} = część z tych {changed}, które są nowe/brakujące w BL.",
+        "summary_extra": "{count} = rekordy istniejące w BL, których nie powinno już być i trzeba je usunąć.",
+        "summary_unchanged": "{count} = rekordy bez zmian.",
+        "summary_sync_skipped": "Nie wykonano synchronizacji, bo audyt przed aktualizacją nie wykazał różnic.",
+        "summary_sync_done": "Synchronizacja: zapisano {updated} rekordów, usunięto {deleted} zbędnych.",
+        "summary_post_skipped": "Kontrola po aktualizacji została pominięta, bo nie było zmian do wykonania.",
+        "summary_post_clean": "Kontrola po aktualizacji: brak niespójności.",
+        "refresh": "Odśwież dane",
+        "start": "Uruchom aktualizację",
+        "label_status": "Stan",
+        "label_progress": "Postęp",
+        "label_eta": "Przewidywany koniec",
+        "label_next_run": "Następne uruchomienie",
+        "label_cost": "Koszt w tym miesiącu",
+        "label_completed": "Co zostało zrobione",
+        "label_stages": "Etapy aktualizacji",
+        "label_settings": "Ustawienia aktualizacji",
+        "label_xml": "Link do XML z Comarch e-Sklep",
+        "label_inventory": "Katalog Baselinker",
+        "label_warehouse": "Magazyn Baselinker",
+        "label_rpm": "Zapytań / min",
+        "config_note": "Zmiany nie zapisują się podczas edycji. <strong>Zostaną użyte i zapamiętane dopiero po kliknięciu „Uruchom aktualizację”.</strong>",
+        "footer": "Strona odświeża dane co minutę, gdy aktualizacja jest w toku.",
+        "date_locale": "pl-PL",
+        "status_running": "W toku",
+        "status_success": "Zakończona",
+        "status_error": "Błąd",
+        "status_unknown": "Nieznany",
+        "message_started": "Aktualizacja została uruchomiona.",
+        "message_progress": "Aktualizacja produktów jest w toku.",
+        "message_finished": "Aktualizacja zakończona.",
+        "message_queued": "Aktualizacja została dodana do kolejki.",
+        "message_already_running": "Aktualizacja już trwa.",
+        "message_no_changes": "Nie było żadnych zmian do wykonania.",
+        "message_not_found": "Nie znaleziono takiej strony lub akcji.",
+        "message_unauthorized": "Brak dostępu. Zaloguj się ponownie.",
+        "error_access": "Brak uprawnień do wykonania tej operacji. Powiadom administratora systemu.",
+        "error_credentials": "Poświadczenia AWS są nieaktywne albo wygasły. Powiadom administratora systemu.",
+        "error_rate": "Usługa zewnętrzna ograniczyła liczbę zapytań. Spróbuj ponownie za chwilę.",
+        "error_timeout": "Operacja trwała zbyt długo. Spróbuj ponownie za chwilę.",
+        "error_connection": "Nie udało się połączyć z usługą zewnętrzną. Spróbuj ponownie za chwilę.",
+        "error_token": "Brak poprawnie skonfigurowanego tokenu Baselinker. Powiadom administratora systemu.",
+        "error_baselinker": "BaseLinker zwrócił błąd podczas pobierania danych. Spróbuj ponownie albo powiadom administratora systemu.",
+        "error_save_config": "Nie udało się zapisać ustawień aktualizacji. Spróbuj ponownie albo powiadom administratora systemu.",
+        "error_load_config": "Nie udało się pobrać ustawień aktualizacji. Spróbuj ponownie albo powiadom administratora systemu.",
+        "error_format": "Usługa zwróciła odpowiedź w nieoczekiwanym formacie. Powiadom administratora systemu.",
+        "error_generic": "Wystąpił problem techniczny. Spróbuj ponownie albo powiadom administratora systemu.",
+        "error_missing_fx_param": "Brak nazwy parametru SSM z kursem USD/PLN.",
+        "error_missing_account": "Brak AWS_ACCOUNT_ID w konfiguracji panelu.",
+        "step_waiting": "czeka",
+        "step_ready": "gotowe do startu",
+        "step_running": "w toku",
+        "step_done": "zakończone",
+        "step_skipped": "pominięte",
+        "step_error": "wymaga sprawdzenia",
+        "fallback_pre_waiting": "Czeka na uruchomienie.",
+        "fallback_sync_waiting": "Czeka na wynik liczenia różnic.",
+        "fallback_post_waiting": "Czeka na zakończenie zmian.",
+        "summary_placeholder": "Tu pojawi się krótkie podsumowanie po policzeniu różnic.",
+        "progress_pre": "Liczymy różnice przed aktualizacją. To może potrwać kilka minut.",
+        "progress_post": "Sprawdzamy zgodność danych po aktualizacji.",
+        "progress_no_changes": "Nie było żadnych zmian do wykonania.",
+        "progress_running": "Wykonano {done} z {total} zmian",
+        "progress_finished": "Wykonano {done} zmian",
+        "progress_details": "{done_text}: zapisano {written} rekordów, usunięto {deleted} zbędnych.",
+        "progress_inactive": "Brak aktywnej aktualizacji.",
+        "counters": "{diff} rozjazdów / {changed} do utworzenia albo aktualizacji / {missing} nowych lub brakujących / {extra} do usunięcia / {unchanged} bez zmian",
+        "queued_pre": "Uruchamiamy liczenie różnic przed aktualizacją.",
+        "queued_sync": "Czeka na wynik liczenia różnic.",
+        "queued_post": "Czeka na zakończenie aktualizacji.",
+        "queued_summary": "Aktualizacja została uruchomiona. Najpierw policzymy różnice między Comarch e-Sklep a Baselinkerem.",
+        "awaiting_status": "Oczekujemy na pierwszy zapis statusu z AWS.",
+        "budget_error": "Nie udało się pobrać budżetu: {error}",
+        "budget_nbp_rate": " Kurs z ostatniego uruchomienia synchronizacji: NBP{date}, 1 USD = {rate} PLN.",
+        "budget_fallback_rate": " Kurs awaryjny{date}: 1 USD = {rate} PLN.",
+        "budget_summary": "{percent}% miesięcznego limitu. Pozostało {remaining} {currency}.{rate_text}",
+        "empty_warehouses": "Brak magazynów",
+        "empty_inventories": "Brak katalogów",
+        "config_saved": "Ustawienia zostały zapisane i będą używane także przy kolejnych aktualizacjach.",
+        "button_starting": "Uruchamianie...",
+        "button_loading_config": "Ładowanie ustawień",
+        "button_running": "Aktualizacja trwa",
+        "button_waiting": "Czekam na start",
+        "button_refreshing": "Odświeżanie...",
+        "config_load_http": "Nie udało się pobrać ustawień ({status})",
+        "status_load_http": "Nie udało się pobrać danych ({status})",
+        "sync_start_http": "Nie udało się uruchomić aktualizacji ({status})",
+        "updated_at": "Ostatni zapis: {date} ({seconds}s temu)",
+        "schedule_enabled": "Harmonogram jest włączony",
+        "schedule_disabled": "Harmonogram nie jest włączony",
+        "run_id": "Numer uruchomienia: {id}",
+        "currency_pln": "zł",
+        "budget_rate_date": " z {date}",
+        "budget_rate_saved": " zapisany {date}",
+    },
+}
+
+
+def _translations() -> dict:
+    return TRANSLATIONS.get(ADMIN_LOCALE, TRANSLATIONS["en"])
+
+
+def _t(key: str, **values) -> str:
+    template = _translations().get(key, TRANSLATIONS["en"].get(key, key))
+    return template.format(**values)
 
 
 def _safe_css_color(value: str, fallback: str) -> str:
@@ -257,7 +520,7 @@ def _load_usd_to_pln_rate() -> dict:
         "error": "",
     }
     if BUDGET_FX_RATE_SSM_PARAM.strip() == "":
-        fallback["error"] = "Brak nazwy parametru SSM z kursem USD/PLN."
+        fallback["error"] = _t("error_missing_fx_param")
         return fallback
     try:
         raw = ssm.get_parameter(Name=BUDGET_FX_RATE_SSM_PARAM, WithDecryption=False)[
@@ -306,7 +569,7 @@ def _load_budget_status() -> dict:
         "error": "",
     }
     if AWS_ACCOUNT_ID.strip() == "":
-        out["error"] = "Brak AWS_ACCOUNT_ID w konfiguracji panelu."
+        out["error"] = _t("error_missing_account")
         return out
     try:
         data = budgets.describe_budget(AccountId=AWS_ACCOUNT_ID, BudgetName=BUDGET_NAME)
@@ -470,7 +733,7 @@ def _load_bl_options() -> dict:
         inventories.append(
             {
                 "id": inv_id,
-                "name": _name_from_row(row, f"Katalog {inv_id}"),
+                "name": _name_from_row(row, _t("inventory_fallback", id=inv_id)),
                 "warehouse_ids": warehouse_ids,
             }
         )
@@ -497,7 +760,10 @@ def _load_bl_options() -> dict:
         warehouse_id = _clean(row.get("warehouse_id") or row.get("id"))
         if warehouse_id == "":
             continue
-        warehouse_name_by_raw_id[warehouse_id] = _name_from_row(row, f"Magazyn {warehouse_id}")
+        warehouse_name_by_raw_id[warehouse_id] = _name_from_row(
+            row,
+            _t("warehouse_fallback", id=warehouse_id),
+        )
 
     warehouses = []
     used_warehouse_ids = set()
@@ -506,7 +772,7 @@ def _load_bl_options() -> dict:
         name = (
             warehouse_name_by_raw_id.get(warehouse_id)
             or warehouse_name_by_raw_id.get(raw_id)
-            or f"Magazyn {warehouse_id}"
+            or _t("warehouse_fallback", id=warehouse_id)
         )
         warehouses.append({"id": warehouse_id, "name": name})
         used_warehouse_ids.add(warehouse_id)
@@ -545,25 +811,25 @@ def _request_json(event: dict) -> dict:
 def _validate_sync_config(config_raw: dict, options: dict) -> dict:
     comarch_url = _clean(config_raw.get("comarch_xml_url"))
     if not comarch_url.startswith("https://"):
-        raise ValueError("Adres XML musi zaczynać się od https://")
+        raise ValueError(_t("validation_https"))
 
     inventory_id = _parse_int(config_raw.get("bl_inventory_id"), 0)
     inventory_by_id = {int(item["id"]): item for item in options.get("inventories", [])}
     if inventory_id <= 0 or inventory_id not in inventory_by_id:
-        raise ValueError("Wybierz poprawny katalog Baselinker.")
+        raise ValueError(_t("validation_inventory"))
     inventory = inventory_by_id[inventory_id]
 
     warehouse_id = _clean(config_raw.get("bl_warehouse_id"))
     warehouse_by_id = {str(item["id"]): item for item in options.get("warehouses", [])}
     if warehouse_id == "" or warehouse_id not in warehouse_by_id:
-        raise ValueError("Wybierz poprawny magazyn Baselinker.")
+        raise ValueError(_t("validation_warehouse"))
     allowed_warehouses = set(inventory.get("warehouse_ids") or [])
     if allowed_warehouses and warehouse_id not in allowed_warehouses:
-        raise ValueError("Wybrany magazyn nie jest przypisany do wybranego katalogu.")
+        raise ValueError(_t("validation_warehouse_inventory"))
 
     rpm = _parse_int(config_raw.get("bl_api_max_rpm"), 90)
     if rpm < 1 or rpm > 100:
-        raise ValueError("Limit zapytań musi być liczbą od 1 do 100.")
+        raise ValueError(_t("validation_rpm"))
 
     return {
         "comarch_xml_url": comarch_url,
@@ -686,15 +952,9 @@ def _summarize_status(status: dict) -> dict:
     needs_admin_attention = bool(post_error or post_audit_has_inconsistencies)
     admin_attention_message = ""
     if post_error:
-        admin_attention_message = (
-            "Kontrola po aktualizacji zakończyła się błędem. Powiadom administratora systemu, "
-            "żeby sprawdził szczegóły, albo spróbuj uruchomić aktualizację jeszcze raz."
-        )
+        admin_attention_message = _t("attention_post_error")
     elif post_audit_has_inconsistencies:
-        admin_attention_message = (
-            f"Po aktualizacji wykryto {post_diff} niespójności. Powiadom administratora systemu, "
-            "żeby sprawdził szczegóły, albo spróbuj uruchomić aktualizację jeszcze raz."
-        )
+        admin_attention_message = _t("attention_post_diff", count=post_diff)
 
     def _step_status(step: str) -> str:
         if step == "pre_audit":
@@ -729,52 +989,61 @@ def _summarize_status(status: dict) -> dict:
 
     def _pre_audit_summary_text() -> str:
         if pre_audit_summary:
-            return f"{pre_diff} różnic, {audit_unchanged} bez zmian"
+            return _t("pre_summary", diff=pre_diff, unchanged=audit_unchanged)
         if pre_audit_step_status == "running":
-            return "Sprawdzamy, co trzeba zmienić."
-        return "Czeka na uruchomienie aktualizacji."
+            return _t("pre_checking")
+        return _t("pre_waiting")
 
     def _sync_summary_text() -> str:
         if sync_skipped_no_changes:
-            return "Pominięto, bo nie znaleziono różnic."
+            return _t("sync_skipped")
         delete_text = ""
         if delete_target > 0 or delete_deleted > 0:
-            delete_text = f"; usunięto {delete_deleted} z {delete_target} zbędnych rekordów"
+            delete_text = _t(
+                "sync_deleted",
+                deleted=delete_deleted,
+                target=delete_target,
+            )
         if sync_step_status == "running":
-            return f"Zapisano {updated} z {write_target} rekordów{delete_text}"
+            return _t(
+                "sync_running",
+                updated=updated,
+                target=write_target,
+                deleted_text=delete_text,
+            )
         if sync_step_status == "done":
-            return f"Zapisano {updated} rekordów{delete_text}"
+            return _t("sync_done", updated=updated, deleted_text=delete_text)
         if sync_step_status == "ready":
-            return "Gotowe do rozpoczęcia po policzeniu różnic."
-        return "Czeka na wynik liczenia różnic."
+            return _t("sync_ready")
+        return _t("sync_waiting")
 
     def _post_audit_summary_text() -> str:
         if needs_admin_attention:
             return admin_attention_message
         if post_audit_skipped_no_changes:
-            return "Pominięto, bo nie było żadnych zmian do wykonania."
+            return _t("post_skipped")
         if post_audit_summary:
-            return "Kontrola zakończona: brak niespójności."
+            return _t("post_clean")
         if post_audit_step_status == "running":
-            return "Sprawdzamy, czy dane po aktualizacji są zgodne."
-        return "Czeka na zakończenie aktualizacji."
+            return _t("post_checking")
+        return _t("post_waiting")
 
     steps = [
         {
             "key": "pre_audit",
-            "label": "Liczenie różnic przed aktualizacją",
+            "label": _t("step_pre"),
             "status": pre_audit_step_status,
             "summary": _pre_audit_summary_text(),
         },
         {
             "key": "sync",
-            "label": "Wprowadzanie zmian w Baselinkerze",
+            "label": _t("step_sync"),
             "status": sync_step_status,
             "summary": _sync_summary_text(),
         },
         {
             "key": "post_audit",
-            "label": "Kontrola po aktualizacji",
+            "label": _t("step_post"),
             "status": post_audit_step_status,
             "summary": _post_audit_summary_text(),
         },
@@ -782,29 +1051,29 @@ def _summarize_status(status: dict) -> dict:
 
     summary_lines = []
     if pre_audit_summary:
-        summary_lines.append(f"{pre_diff} = liczba wykrytych problemów/rozjazdów w danych.")
+        summary_lines.append(_t("summary_diff", count=pre_diff))
+        summary_lines.append(_t("summary_changed", count=pre_changed))
         summary_lines.append(
-            f"{pre_changed} = liczba rekordów, które trzeba utworzyć albo zaktualizować w BL."
+            _t("summary_missing", count=pre_missing, changed=pre_changed)
         )
-        summary_lines.append(
-            f"{pre_missing} = część z tych {pre_changed}, które są nowe/brakujące w BL."
-        )
-        summary_lines.append(
-            f"{pre_extra} = rekordy istniejące w BL, których nie powinno już być i trzeba je usunąć."
-        )
-        summary_lines.append(f"{audit_unchanged} = rekordy bez zmian.")
+        summary_lines.append(_t("summary_extra", count=pre_extra))
+        summary_lines.append(_t("summary_unchanged", count=audit_unchanged))
     if sync_skipped_no_changes:
-        summary_lines.append("Nie wykonano synca, bo audyt przed aktualizacją nie wykazał różnic.")
+        summary_lines.append(_t("summary_sync_skipped"))
     elif requested > 0 or updated > 0 or delete_deleted > 0:
         summary_lines.append(
-            f"Sync: zapisano {updated} rekordów, usunięto {delete_deleted} zbędnych."
+            _t(
+                "summary_sync_done",
+                updated=updated,
+                deleted=delete_deleted,
+            )
         )
     if post_audit_skipped_no_changes:
-        summary_lines.append("Kontrola po aktualizacji została pominięta, bo nie było zmian do wykonania.")
+        summary_lines.append(_t("summary_post_skipped"))
     elif needs_admin_attention:
         summary_lines.append(admin_attention_message)
     elif post_audit_summary:
-        summary_lines.append("Kontrola po aktualizacji: brak niespójności.")
+        summary_lines.append(_t("summary_post_clean"))
 
     updated_unix = int(status.get("updated_at_unix") or 0)
     updated_age_sec = 0
@@ -920,6 +1189,8 @@ def _page() -> str:
     primary = _safe_css_color(BRAND_PRIMARY_COLOR, "#1673b8")
     primary_dark = _safe_css_color(BRAND_PRIMARY_DARK_COLOR, "#0f5d96")
     secondary = _safe_css_color(BRAND_SECONDARY_COLOR, "#183c5c")
+    locale = html.escape(ADMIN_LOCALE)
+    i18n_json = json.dumps(_translations(), ensure_ascii=False).replace("<", "\\u003c")
     brand_name = html.escape(BRAND_NAME)
     panel_title = html.escape(BRAND_PANEL_TITLE)
     panel_subtitle = html.escape(BRAND_PANEL_SUBTITLE)
@@ -934,11 +1205,11 @@ def _page() -> str:
         brand_visual = f'<div class="brand-mark" aria-hidden="true">{initials}</div>'
 
     template = """<!doctype html>
-<html lang="pl">
+<html lang="__LOCALE__">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>__BRAND_NAME__ - synchronizacja</title>
+  <title>__BRAND_NAME__ - __PAGE_TITLE_SUFFIX__</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <style>
     :root {
@@ -1196,77 +1467,76 @@ def _page() -> str:
         </div>
       </div>
       <div class="actions">
-        <button id="refreshBtn"><span class="spinner"></span><span class="btnText">Odśwież dane</span></button>
-        <button id="syncBtn" class="primary"><span class="spinner"></span><span class="btnText">Uruchom aktualizację</span></button>
+        <button id="refreshBtn"><span class="spinner"></span><span class="btnText">__REFRESH__</span></button>
+        <button id="syncBtn" class="primary"><span class="spinner"></span><span class="btnText">__START__</span></button>
       </div>
     </header>
 
     <section class="grid">
       <div class="panel">
-        <div class="label">Stan</div>
+        <div class="label">__LABEL_STATUS__</div>
         <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">...</span></div>
         <div id="message" class="small"></div>
         <div id="attentionAlert" class="attention-alert hidden"></div>
       </div>
       <div class="panel">
-        <div class="label">Postęp</div>
+        <div class="label">__LABEL_PROGRESS__</div>
         <div id="progressText" class="value">0%</div>
         <div class="bar"><span id="progressBar"></span></div>
         <div id="recordsText" class="small"></div>
       </div>
       <div class="panel">
-        <div class="label">Przewidywany koniec</div>
+        <div class="label">__LABEL_ETA__</div>
         <div id="etaText" class="value">-</div>
         <div id="updatedText" class="small"></div>
       </div>
       <div class="panel">
-        <div class="label">Następne uruchomienie</div>
+        <div class="label">__LABEL_NEXT_RUN__</div>
         <div id="nextRunText" class="value">-</div>
         <div id="scheduleText" class="small"></div>
       </div>
       <div class="panel">
-        <div class="label">Koszt w tym miesiącu</div>
+        <div class="label">__LABEL_COST__</div>
         <div id="budgetText" class="value">-</div>
         <div id="budgetSmall" class="small"></div>
       </div>
       <div class="panel wide">
-        <div class="label">Co zostało zrobione</div>
+        <div class="label">__LABEL_COMPLETED__</div>
         <div id="countersText" class="value">-</div>
         <div id="runText" class="small"></div>
       </div>
       <div class="panel wide">
-        <div class="label">Etapy aktualizacji</div>
+        <div class="label">__LABEL_STAGES__</div>
         <div id="stepsList" class="steps"></div>
         <div id="summaryText" class="summary-list"></div>
       </div>
       <div class="panel config">
-        <div class="label">Ustawienia aktualizacji</div>
+        <div class="label">__LABEL_SETTINGS__</div>
         <div class="config-grid">
           <div class="field">
-            <label for="comarchUrlInput">Link do XML z Comarch e-Sklep</label>
+            <label for="comarchUrlInput">__LABEL_XML__</label>
             <input id="comarchUrlInput" type="url" placeholder="https://...">
           </div>
           <div class="field">
-            <label for="inventorySelect">Katalog Baselinker</label>
+            <label for="inventorySelect">__LABEL_INVENTORY__</label>
             <select id="inventorySelect"></select>
           </div>
           <div class="field">
-            <label for="warehouseSelect">Magazyn Baselinker</label>
+            <label for="warehouseSelect">__LABEL_WAREHOUSE__</label>
             <select id="warehouseSelect"></select>
           </div>
           <div class="field">
-            <label for="rpmInput">Zapytań / min</label>
+            <label for="rpmInput">__LABEL_RPM__</label>
             <input id="rpmInput" type="number" min="1" max="100" step="1">
           </div>
         </div>
-        <div id="configNote" class="config-note">
-          Zmiany nie zapisują się podczas edycji. <strong>Zostaną użyte i zapamiętane dopiero po kliknięciu „Uruchom aktualizację”.</strong>
-        </div>
+        <div id="configNote" class="config-note">__CONFIG_NOTE__</div>
       </div>
     </section>
-    <div class="foot">Strona odświeża dane co minutę, gdy aktualizacja jest w toku.</div>
+    <div class="foot">__FOOTER__</div>
   </main>
   <script>
+    const I18N = __I18N_JSON__;
     const statusText = document.getElementById('statusText');
     const statusDot = document.getElementById('statusDot');
     const progressText = document.getElementById('progressText');
@@ -1300,87 +1570,90 @@ def _page() -> str:
     let configOptions = { inventories: [], warehouses: [] };
     let lastSync = {};
 
+    function tr(key, values = {}) {
+      let text = String(I18N[key] || key);
+      Object.entries(values).forEach(([name, value]) => {
+        text = text.replaceAll(`{${name}}`, String(value));
+      });
+      return text;
+    }
+
     function fmt(value) {
       if (!value) return '-';
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return value;
-      return date.toLocaleString('pl-PL');
+      return date.toLocaleString(I18N.date_locale || 'en-GB');
     }
 
     function statusLabel(status) {
       const map = {
-        running: 'W toku',
-        success: 'Zakończona',
-        error: 'Błąd',
-        unknown: 'Nieznany'
+        running: tr('status_running'),
+        success: tr('status_success'),
+        error: tr('status_error'),
+        unknown: tr('status_unknown')
       };
-      return map[status] || 'Nieznany';
+      return map[status] || tr('status_unknown');
     }
 
     function messageLabel(text) {
       const raw = String(text || '').trim();
       if (!raw) return '';
       const map = {
-        'Sync started.': 'Aktualizacja została uruchomiona.',
-        'Sync in progress.': 'Aktualizacja produktów jest w toku.',
-        'Sync finished.': 'Aktualizacja zakończona.',
-        'Sync queued.': 'Aktualizacja została dodana do kolejki.',
-        'Sync is already running.': 'Aktualizacja już trwa.',
-        'Sync skipped; pre-audit diff_total=0.': 'Nie było żadnych zmian do wykonania.',
-        'Not found': 'Nie znaleziono takiej strony lub akcji.',
-        'Unauthorized': 'Brak dostępu. Zaloguj się ponownie.'
+        'Sync started.': tr('message_started'),
+        'Sync in progress.': tr('message_progress'),
+        'Sync finished.': tr('message_finished'),
+        'Sync queued.': tr('message_queued'),
+        'Sync is already running.': tr('message_already_running'),
+        'Sync skipped; pre-audit diff_total=0.': tr('message_no_changes'),
+        'Not found': tr('message_not_found'),
+        'Unauthorized': tr('message_unauthorized')
       };
       if (map[raw]) return map[raw];
 
       const lower = raw.toLowerCase();
       if (lower.includes('accessdenied') || lower.includes('not authorized') || lower.includes('unauthorized')) {
-        return 'Brak uprawnień do wykonania tej operacji. Powiadom administratora systemu.';
+        return tr('error_access');
       }
       if (lower.includes('expiredtoken') || lower.includes('security token') || lower.includes('invalidclienttokenid')) {
-        return 'Poświadczenia AWS są nieaktywne albo wygasły. Powiadom administratora systemu.';
+        return tr('error_credentials');
       }
       if (lower.includes('throttl') || lower.includes('too many requests') || lower.includes('rate limit') || lower.includes('429')) {
-        return 'Usługa zewnętrzna ograniczyła liczbę zapytań. Spróbuj ponownie za chwilę.';
+        return tr('error_rate');
       }
       if (lower.includes('timeout') || lower.includes('timed out')) {
-        return 'Operacja trwała zbyt długo. Spróbuj ponownie za chwilę.';
+        return tr('error_timeout');
       }
       if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('could not connect') || lower.includes('endpointconnection') || lower.includes('connection')) {
-        return 'Nie udało się połączyć z usługą zewnętrzną. Spróbuj ponownie za chwilę.';
+        return tr('error_connection');
       }
       if (lower.includes('bl api token') || lower.includes('bltoken') || lower.includes('api token')) {
-        return 'Brak poprawnie skonfigurowanego tokenu Baselinker. Powiadom administratora systemu.';
+        return tr('error_token');
       }
       if (lower.includes('baselinker') || lower.includes('getinventories') || lower.includes('getinventorywarehouses')) {
-        return 'BaseLinker zwrócił błąd podczas pobierania danych. Spróbuj ponownie albo powiadom administratora systemu.';
+        return tr('error_baselinker');
       }
       if (lower.includes('failed to save sync config')) {
-        return 'Nie udało się zapisać ustawień aktualizacji. Spróbuj ponownie albo powiadom administratora systemu.';
+        return tr('error_save_config');
       }
       if (lower.includes('failed to load sync config')) {
-        return 'Nie udało się pobrać ustawień aktualizacji. Spróbuj ponownie albo powiadom administratora systemu.';
+        return tr('error_load_config');
       }
       if (lower.includes('malformed') || lower.includes('json') || lower.includes('decode')) {
-        return 'Usługa zwróciła odpowiedź w nieoczekiwanym formacie. Powiadom administratora systemu.';
+        return tr('error_format');
       }
-
-      const polishPrefixes = ['Aktualizacja ', 'Adres ', 'Brak ', 'Kontrola ', 'Limit ', 'Nie ', 'Powiadom ', 'Wybierz ', 'Wybrany ', 'Wystąpił '];
-      if (/[ąćęłńóśźż]/i.test(raw) || polishPrefixes.some((prefix) => raw.startsWith(prefix))) {
-        return raw;
-      }
-      return 'Wystąpił problem techniczny. Spróbuj ponownie albo powiadom administratora systemu.';
+      return tr('error_generic');
     }
 
     function statusTextForStep(status) {
       const map = {
-        waiting: 'czeka',
-        ready: 'gotowe do startu',
-        running: 'w toku',
-        done: 'zakończone',
-        skipped: 'pominięte',
-        error: 'wymaga sprawdzenia'
+        waiting: tr('step_waiting'),
+        ready: tr('step_ready'),
+        running: tr('step_running'),
+        done: tr('step_done'),
+        skipped: tr('step_skipped'),
+        error: tr('step_error')
       };
-      return map[status] || status || 'czeka';
+      return map[status] || status || tr('step_waiting');
     }
 
     function renderAttention(sync) {
@@ -1396,9 +1669,9 @@ def _page() -> str:
 
     function renderSteps(steps, summaryLines) {
       const safeSteps = Array.isArray(steps) && steps.length ? steps : [
-        { label: 'Liczenie różnic przed aktualizacją', status: 'waiting', summary: 'Czeka na uruchomienie.' },
-        { label: 'Wprowadzanie zmian w Baselinkerze', status: 'waiting', summary: 'Czeka na wynik liczenia różnic.' },
-        { label: 'Kontrola po aktualizacji', status: 'waiting', summary: 'Czeka na zakończenie zmian.' }
+        { label: tr('step_pre'), status: 'waiting', summary: tr('fallback_pre_waiting') },
+        { label: tr('step_sync'), status: 'waiting', summary: tr('fallback_sync_waiting') },
+        { label: tr('step_post'), status: 'waiting', summary: tr('fallback_post_waiting') }
       ];
       stepsList.innerHTML = safeSteps.map((step) => `
         <div class="step ${step.status || 'waiting'}">
@@ -1412,19 +1685,19 @@ def _page() -> str:
       const lines = Array.isArray(summaryLines) ? summaryLines.filter(Boolean) : [];
       summaryText.innerHTML = lines.length
         ? lines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')
-        : 'Tu pojawi się krótkie podsumowanie po policzeniu różnic.';
+        : tr('summary_placeholder');
     }
 
     function renderProgressDetails(sync) {
       const stage = sync.sync_stage || '';
       if (stage === 'pre_audit') {
-        return 'Liczymy różnice przed aktualizacją. To może potrwać kilka minut.';
+        return tr('progress_pre');
       }
       if (stage === 'post_audit') {
-        return 'Sprawdzamy zgodność danych po aktualizacji.';
+        return tr('progress_post');
       }
       if (sync.sync_skipped_no_changes) {
-        return 'Nie było żadnych zmian do wykonania.';
+        return tr('progress_no_changes');
       }
       const writeTarget = Number(sync.global_write_target || sync.global_total_records || 0);
       const written = Number(sync.global_updated || sync.global_requested || sync.global_processed || 0);
@@ -1434,11 +1707,15 @@ def _page() -> str:
       const mutationDone = Number(sync.mutation_done || (written + deleted));
       if (mutationTotal > 0 || mutationDone > 0) {
         const doneText = sync.status === 'running'
-          ? `Wykonano ${mutationDone} z ${mutationTotal} zmian`
-          : `Wykonano ${mutationDone} zmian`;
-        return `${doneText}: zapisano ${written} rekordów, usunięto ${deleted} zbędnych.`;
+          ? tr('progress_running', { done: mutationDone, total: mutationTotal })
+          : tr('progress_finished', { done: mutationDone });
+        return tr('progress_details', {
+          done_text: doneText,
+          written,
+          deleted
+        });
       }
-      return 'Brak aktywnej aktualizacji.';
+      return tr('progress_inactive');
     }
 
     function renderCounters(sync) {
@@ -1449,9 +1726,15 @@ def _page() -> str:
       const extra = Number(pre.extra_in_bl || sync.global_delete_target || 0);
       const unchanged = Number(sync.unchanged_records || 0);
       if (diffTotal > 0 || changed > 0 || missing > 0 || extra > 0 || unchanged > 0) {
-        countersText.textContent = `${diffTotal} rozjazdów / ${changed} do utworzenia albo aktualizacji / ${missing} nowych lub brakujących / ${extra} do usunięcia / ${unchanged} bez zmian`;
+        countersText.textContent = tr('counters', {
+          diff: diffTotal,
+          changed,
+          missing,
+          extra,
+          unchanged
+        });
       } else if (sync.status === 'running' && sync.sync_stage === 'pre_audit') {
-        countersText.textContent = 'Liczymy różnice przed aktualizacją.';
+        countersText.textContent = tr('pre_checking');
       } else {
         countersText.textContent = '-';
       }
@@ -1465,11 +1748,11 @@ def _page() -> str:
         progress_percent: 0,
         message: 'Sync queued.',
         steps: [
-          { label: 'Liczenie różnic przed aktualizacją', status: 'running', summary: 'Uruchamiamy liczenie różnic przed aktualizacją.' },
-          { label: 'Wprowadzanie zmian w Baselinkerze', status: 'waiting', summary: 'Czeka na wynik liczenia różnic.' },
-          { label: 'Kontrola po aktualizacji', status: 'waiting', summary: 'Czeka na zakończenie aktualizacji.' }
+          { label: tr('step_pre'), status: 'running', summary: tr('queued_pre') },
+          { label: tr('step_sync'), status: 'waiting', summary: tr('queued_sync') },
+          { label: tr('step_post'), status: 'waiting', summary: tr('queued_post') }
         ],
-        summary_lines: ['Aktualizacja została uruchomiona. Najpierw policzymy różnice między Comarch e-Sklep a Baselinkerem.']
+        summary_lines: [tr('queued_summary')]
       };
       lastSync = optimistic;
       statusText.textContent = statusLabel(optimistic.status);
@@ -1480,7 +1763,7 @@ def _page() -> str:
       progressBar.style.width = '0%';
       recordsText.textContent = renderProgressDetails(optimistic);
       etaText.textContent = '-';
-      updatedText.textContent = 'Oczekujemy na pierwszy zapis statusu z AWS.';
+      updatedText.textContent = tr('awaiting_status');
       renderSteps(optimistic.steps, optimistic.summary_lines);
       renderCounters(optimistic);
       runText.textContent = '';
@@ -1507,23 +1790,34 @@ def _page() -> str:
       const percent = Number(data.percent_used || 0);
       const displayPercent = limitWhole > 0 ? (spentWhole * 100 / limitWhole) : percent;
       const currency = data.display_currency || data.currency || 'PLN';
-      const currencyLabel = currency === 'PLN' ? 'zł' : currency;
+      const currencyLabel = currency === 'PLN' ? tr('currency_pln') : currency;
       const rate = Number(data.usd_to_pln_rate || 0);
       budgetText.textContent = `${spentWhole} / ${limitWhole} ${currencyLabel}`;
       budgetText.className = `value ${displayPercent >= 100 ? 'budget-danger' : displayPercent >= 80 ? 'budget-warn' : 'budget-ok'}`;
       if (data.error) {
-        budgetSmall.textContent = `Nie udało się pobrać budżetu: ${messageLabel(data.error)}`;
+        budgetSmall.textContent = tr('budget_error', { error: messageLabel(data.error) });
       } else {
         const fxSource = data.usd_to_pln_source || '';
         const fxDate = data.usd_to_pln_effective_date || '';
         const fxFetchedAt = data.usd_to_pln_fetched_at_iso || '';
         let rateText = '';
         if (rate > 0 && fxSource === 'nbp') {
-          rateText = ` Kurs z ostatniego uruchomienia synca: NBP${fxDate ? ` z ${fxDate}` : ''}, 1 USD = ${rate.toFixed(2)} PLN.`;
+          rateText = tr('budget_nbp_rate', {
+            date: fxDate ? tr('budget_rate_date', { date: fxDate }) : '',
+            rate: rate.toFixed(2)
+          });
         } else if (rate > 0) {
-          rateText = ` Kurs awaryjny${fxFetchedAt ? ` zapisany ${fmt(fxFetchedAt)}` : ''}: 1 USD = ${rate.toFixed(2)} PLN.`;
+          rateText = tr('budget_fallback_rate', {
+            date: fxFetchedAt ? tr('budget_rate_saved', { date: fmt(fxFetchedAt) }) : '',
+            rate: rate.toFixed(2)
+          });
         }
-        budgetSmall.textContent = `${displayPercent.toFixed(1)}% miesięcznego limitu. Pozostało ${remainingWhole} ${currencyLabel}.${rateText}`;
+        budgetSmall.textContent = tr('budget_summary', {
+          percent: displayPercent.toFixed(1),
+          remaining: remainingWhole,
+          currency: currencyLabel,
+          rate_text: rateText
+        });
       }
     }
 
@@ -1574,7 +1868,7 @@ def _page() -> str:
         const allowedIds = new Set(inventory.warehouse_ids.map(String));
         allowed = configOptions.warehouses.filter((item) => allowedIds.has(String(item.id)));
       }
-      fillSelect(warehouseSelect, allowed, selectedValue || warehouseSelect.value, 'Brak magazynów');
+      fillSelect(warehouseSelect, allowed, selectedValue || warehouseSelect.value, tr('empty_warehouses'));
     }
 
     async function loadConfig() {
@@ -1583,14 +1877,14 @@ def _page() -> str:
       try {
         const res = await fetch('/api/config', { credentials: 'include' });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.message || `Nie udało się pobrać ustawień (${res.status})`);
+        if (!res.ok) throw new Error(data.message || tr('config_load_http', { status: res.status }));
         const config = data.config || {};
         configOptions = data.options || { inventories: [], warehouses: [] };
         comarchUrlInput.value = config.comarch_xml_url || '';
         rpmInput.value = config.bl_api_max_rpm || 90;
-        fillSelect(inventorySelect, configOptions.inventories || [], config.bl_inventory_id, 'Brak katalogów');
+        fillSelect(inventorySelect, configOptions.inventories || [], config.bl_inventory_id, tr('empty_inventories'));
         refreshWarehouseOptions(config.bl_warehouse_id);
-        configNote.innerHTML = 'Zmiany nie zapisują się podczas edycji. <strong>Zostaną użyte i zapamiętane dopiero po kliknięciu „Uruchom aktualizację”.</strong>';
+        configNote.innerHTML = tr('config_note');
       } catch (err) {
         configNote.textContent = messageLabel(err.message);
       } finally {
@@ -1613,15 +1907,15 @@ def _page() -> str:
       const recentlyTriggered = Date.now() < triggerLockUntil;
       syncBtn.disabled = isTriggering || running || recentlyTriggered || isConfigLoading;
       if (isTriggering) {
-        setButtonLoading(syncBtn, true, 'Uruchamianie...');
+        setButtonLoading(syncBtn, true, tr('button_starting'));
       } else if (isConfigLoading) {
-        setButtonLoading(syncBtn, true, 'Ładowanie ustawień');
+        setButtonLoading(syncBtn, true, tr('button_loading_config'));
       } else if (running) {
-        setButtonLoading(syncBtn, true, 'Aktualizacja trwa');
+        setButtonLoading(syncBtn, true, tr('button_running'));
       } else if (recentlyTriggered) {
-        setButtonLoading(syncBtn, true, 'Czekam na start');
+        setButtonLoading(syncBtn, true, tr('button_waiting'));
       } else {
-        setButtonLoading(syncBtn, false, 'Uruchom aktualizację');
+        setButtonLoading(syncBtn, false, tr('start'));
       }
     }
 
@@ -1641,10 +1935,10 @@ def _page() -> str:
     async function loadStatus() {
       if (isRefreshing) return;
       isRefreshing = true;
-      setButtonLoading(refreshBtn, true, 'Odświeżanie...');
+      setButtonLoading(refreshBtn, true, tr('button_refreshing'));
       try {
         const res = await fetch('/api/status', { credentials: 'include' });
-        if (!res.ok) throw new Error(`Nie udało się pobrać danych (${res.status})`);
+        if (!res.ok) throw new Error(tr('status_load_http', { status: res.status }));
         const data = await res.json();
         const sync = data.sync || {};
         lastSync = sync;
@@ -1660,19 +1954,24 @@ def _page() -> str:
         progressBar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
         recordsText.textContent = renderProgressDetails(sync);
         etaText.textContent = fmt(sync.eta_finish_iso);
-        updatedText.textContent = `Ostatni zapis: ${fmt(sync.updated_at_iso)} (${sync.updated_age_sec || 0}s temu)`;
+        updatedText.textContent = tr('updated_at', {
+          date: fmt(sync.updated_at_iso),
+          seconds: sync.updated_age_sec || 0
+        });
         nextRunText.textContent = fmt(schedule.next_run_iso);
-        scheduleText.textContent = schedule.state === 'ENABLED' ? 'Harmonogram jest włączony' : 'Harmonogram nie jest włączony';
+        scheduleText.textContent = schedule.state === 'ENABLED'
+          ? tr('schedule_enabled')
+          : tr('schedule_disabled');
         renderBudget(budget);
         renderSteps(sync.steps, sync.summary_lines);
         renderCounters(sync);
-        runText.textContent = sync.run_id ? `Numer uruchomienia: ${sync.run_id}` : '';
+        runText.textContent = sync.run_id ? tr('run_id', { id: sync.run_id }) : '';
         updateSyncButton(sync);
 
         scheduleNextRefresh(sync);
       } finally {
         isRefreshing = false;
-        setButtonLoading(refreshBtn, false, 'Odśwież dane');
+        setButtonLoading(refreshBtn, false, tr('refresh'));
       }
     }
 
@@ -1680,7 +1979,7 @@ def _page() -> str:
       if (isTriggering || syncBtn.disabled) return;
       isTriggering = true;
       syncBtn.disabled = true;
-      setButtonLoading(syncBtn, true, 'Uruchamianie...');
+      setButtonLoading(syncBtn, true, tr('button_starting'));
       try {
         const res = await fetch('/api/sync', {
           method: 'POST',
@@ -1689,8 +1988,10 @@ def _page() -> str:
           body: JSON.stringify({ config: collectConfig() })
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(messageLabel(data.message) || `Nie udało się uruchomić aktualizacji (${res.status})`);
-        configNote.innerHTML = 'Ustawienia zostały zapisane i będą używane także przy kolejnych aktualizacjach.';
+        if (!res.ok) {
+          throw new Error(messageLabel(data.message) || tr('sync_start_http', { status: res.status }));
+        }
+        configNote.innerHTML = tr('config_saved');
         triggerLockUntil = Date.now() + 30000;
         forcePollingUntil = Date.now() + 15 * 60 * 1000;
         renderQueuedStart();
@@ -1710,7 +2011,7 @@ def _page() -> str:
     refreshBtn.addEventListener('click', () => loadStatus().catch((err) => {
       message.textContent = messageLabel(err.message);
       isRefreshing = false;
-      setButtonLoading(refreshBtn, false, 'Odśwież dane');
+      setButtonLoading(refreshBtn, false, tr('refresh'));
     }));
     inventorySelect.addEventListener('change', () => refreshWarehouseOptions());
     syncBtn.addEventListener('click', triggerSync);
@@ -1718,23 +2019,45 @@ def _page() -> str:
       configNote.textContent = messageLabel(err.message);
     });
     loadStatus().catch((err) => {
-      statusText.textContent = 'Błąd';
+      statusText.textContent = tr('status_error');
       message.textContent = messageLabel(err.message);
       isRefreshing = false;
-      setButtonLoading(refreshBtn, false, 'Odśwież dane');
+      setButtonLoading(refreshBtn, false, tr('refresh'));
     });
   </script>
 </body>
 </html>"""
-    return (
-        template.replace("__BRAND_NAME__", brand_name)
-        .replace("__PANEL_TITLE__", panel_title)
-        .replace("__PANEL_SUBTITLE__", panel_subtitle)
-        .replace("__BRAND_VISUAL__", brand_visual)
-        .replace("__PRIMARY_COLOR__", primary)
-        .replace("__PRIMARY_DARK_COLOR__", primary_dark)
-        .replace("__SECONDARY_COLOR__", secondary)
-    )
+    replacements = {
+        "__LOCALE__": locale,
+        "__I18N_JSON__": i18n_json,
+        "__BRAND_NAME__": brand_name,
+        "__PAGE_TITLE_SUFFIX__": html.escape(_t("page_title_suffix")),
+        "__PANEL_TITLE__": panel_title,
+        "__PANEL_SUBTITLE__": panel_subtitle,
+        "__BRAND_VISUAL__": brand_visual,
+        "__PRIMARY_COLOR__": primary,
+        "__PRIMARY_DARK_COLOR__": primary_dark,
+        "__SECONDARY_COLOR__": secondary,
+        "__REFRESH__": html.escape(_t("refresh")),
+        "__START__": html.escape(_t("start")),
+        "__LABEL_STATUS__": html.escape(_t("label_status")),
+        "__LABEL_PROGRESS__": html.escape(_t("label_progress")),
+        "__LABEL_ETA__": html.escape(_t("label_eta")),
+        "__LABEL_NEXT_RUN__": html.escape(_t("label_next_run")),
+        "__LABEL_COST__": html.escape(_t("label_cost")),
+        "__LABEL_COMPLETED__": html.escape(_t("label_completed")),
+        "__LABEL_STAGES__": html.escape(_t("label_stages")),
+        "__LABEL_SETTINGS__": html.escape(_t("label_settings")),
+        "__LABEL_XML__": html.escape(_t("label_xml")),
+        "__LABEL_INVENTORY__": html.escape(_t("label_inventory")),
+        "__LABEL_WAREHOUSE__": html.escape(_t("label_warehouse")),
+        "__LABEL_RPM__": html.escape(_t("label_rpm")),
+        "__CONFIG_NOTE__": _t("config_note"),
+        "__FOOTER__": html.escape(_t("footer")),
+    }
+    for marker, value in replacements.items():
+        template = template.replace(marker, value)
+    return template
 
 
 def lambda_handler(event, context):
