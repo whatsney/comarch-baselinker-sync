@@ -31,25 +31,33 @@ BUDGET_LIMIT_USD = float(os.getenv("BUDGET_LIMIT_USD", "30") or "30")
 
 
 def _clean(value: object) -> str:
-    return "" if value is None else str(value).strip()
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _event_action(event: Dict[str, Any]) -> str:
-    raw = _clean(event.get("action", "")).lower()
-    if raw in {"enable", "disable", "check", "status"}:
-        return raw
+    requested_action = _clean(event.get("action", "")).lower()
+    if requested_action in {"enable", "disable", "check", "status"}:
+        return requested_action
+
+    # A budget alarm reaches this Lambda through SNS. Such an event always
+    # means that cost-generating synchronization resources must be disabled.
     records = event.get("Records", [])
-    if isinstance(records, list) and records:
+    if isinstance(records, list):
         for record in records:
             if not isinstance(record, dict):
                 continue
-            if _clean(record.get("EventSource") or record.get("eventSource")).lower() == "aws:sns":
+            event_source = _clean(
+                record.get("EventSource") or record.get("eventSource")
+            ).lower()
+            if event_source == "aws:sns":
                 return "disable"
     return "status"
 
 
 def _load_budget_status() -> Dict[str, Any]:
-    out: Dict[str, Any] = {
+    budget_status: Dict[str, Any] = {
         "name": BUDGET_NAME,
         "limit_usd": round(float(BUDGET_LIMIT_USD), 2),
         "spent_usd": 0.0,
@@ -58,32 +66,49 @@ def _load_budget_status() -> Dict[str, Any]:
         "error": "",
     }
     if AWS_ACCOUNT_ID == "":
-        out["error"] = "missing_aws_account_id"
-        return out
+        budget_status["error"] = "missing_aws_account_id"
+        return budget_status
+
     try:
-        data = budgets.describe_budget(AccountId=AWS_ACCOUNT_ID, BudgetName=BUDGET_NAME)
-        budget = data.get("Budget", {}) if isinstance(data, dict) else {}
-        limit = budget.get("BudgetLimit", {}) if isinstance(budget.get("BudgetLimit"), dict) else {}
-        spend = (
-            budget.get("CalculatedSpend", {}).get("ActualSpend", {})
-            if isinstance(budget.get("CalculatedSpend"), dict)
-            else {}
+        response = budgets.describe_budget(
+            AccountId=AWS_ACCOUNT_ID,
+            BudgetName=BUDGET_NAME,
         )
-        limit_usd = float(limit.get("Amount") or BUDGET_LIMIT_USD)
-        spent_usd = float(spend.get("Amount") or 0.0)
-        out.update(
+        budget = {}
+        if isinstance(response, dict):
+            budget = response.get("Budget", {})
+        if not isinstance(budget, dict):
+            budget = {}
+
+        budget_limit = budget.get("BudgetLimit", {})
+        if not isinstance(budget_limit, dict):
+            budget_limit = {}
+
+        calculated_spend = budget.get("CalculatedSpend", {})
+        if not isinstance(calculated_spend, dict):
+            calculated_spend = {}
+
+        actual_spend = calculated_spend.get("ActualSpend", {})
+        if not isinstance(actual_spend, dict):
+            actual_spend = {}
+
+        limit_usd = float(budget_limit.get("Amount") or BUDGET_LIMIT_USD)
+        spent_usd = float(actual_spend.get("Amount") or 0.0)
+        percent_used = 0.0
+        if limit_usd > 0:
+            percent_used = round(spent_usd * 100.0 / limit_usd, 2)
+
+        budget_status.update(
             {
                 "limit_usd": round(limit_usd, 2),
                 "spent_usd": round(spent_usd, 4),
-                "percent_used": round((spent_usd * 100.0 / limit_usd), 2)
-                if limit_usd > 0
-                else 0.0,
+                "percent_used": percent_used,
                 "over_limit": bool(limit_usd > 0 and spent_usd >= limit_usd),
             }
         )
     except Exception as exc:
-        out["error"] = f"{type(exc).__name__}: {exc}"
-    return out
+        budget_status["error"] = f"{type(exc).__name__}: {exc}"
+    return budget_status
 
 
 def _update_schedule_state(enabled: bool) -> Dict[str, Any]:
@@ -140,7 +165,7 @@ def _write_status(payload: Dict[str, Any]) -> None:
 
 
 def _apply(action: str, reason: str) -> Dict[str, Any]:
-    out: Dict[str, Any] = {
+    operation_result: Dict[str, Any] = {
         "ok": True,
         "action": action,
         "reason": reason,
@@ -153,32 +178,41 @@ def _apply(action: str, reason: str) -> Dict[str, Any]:
                 FunctionName=SYNC_FUNCTION_NAME,
                 ReservedConcurrentExecutions=0,
             )
-            out["reserved_concurrency"] = 0
+            operation_result["reserved_concurrency"] = 0
         elif action == "enable":
+            target_concurrency = max(1, TARGET_RESERVED_CONCURRENCY)
             lambda_api.put_function_concurrency(
                 FunctionName=SYNC_FUNCTION_NAME,
-                ReservedConcurrentExecutions=max(1, TARGET_RESERVED_CONCURRENCY),
+                ReservedConcurrentExecutions=target_concurrency,
             )
-            out["reserved_concurrency"] = max(1, TARGET_RESERVED_CONCURRENCY)
+            operation_result["reserved_concurrency"] = target_concurrency
     except Exception as exc:
-        out["ok"] = False
-        out["errors"].append(f"lambda_concurrency:{type(exc).__name__}: {exc}")
+        operation_result["ok"] = False
+        operation_result["errors"].append(
+            f"lambda_concurrency:{type(exc).__name__}: {exc}"
+        )
 
     if action in {"disable", "enable"}:
         enabled = action == "enable"
         try:
-            out["schedule"] = _update_schedule_state(enabled)
+            operation_result["schedule"] = _update_schedule_state(enabled)
         except Exception as exc:
-            out["ok"] = False
-            out["errors"].append(f"scheduler:{type(exc).__name__}: {exc}")
+            operation_result["ok"] = False
+            operation_result["errors"].append(
+                f"scheduler:{type(exc).__name__}: {exc}"
+            )
         try:
-            out["sqs_event_source"] = _update_sqs_event_source_state(enabled)
+            operation_result["sqs_event_source"] = _update_sqs_event_source_state(
+                enabled
+            )
         except Exception as exc:
-            out["ok"] = False
-            out["errors"].append(f"sqs_event_source:{type(exc).__name__}: {exc}")
+            operation_result["ok"] = False
+            operation_result["errors"].append(
+                f"sqs_event_source:{type(exc).__name__}: {exc}"
+            )
 
-    _write_status(out)
-    return out
+    _write_status(operation_result)
+    return operation_result
 
 
 def lambda_handler(event, _context):

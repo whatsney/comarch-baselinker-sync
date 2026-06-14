@@ -1,26 +1,30 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from aws_cdk import CfnOutput, Stack, aws_budgets as budgets
 from constructs import Construct
+
+from context_values import get_context_text
 
 
 class ComarchBaseLinkerBudgetStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        def ctx(name: str, default: Optional[str] = None, required: bool = False) -> str:
-            value = self.node.try_get_context(name)
-            if value is None or str(value).strip() == "":
-                value = default
-            if required and (value is None or str(value).strip() == ""):
-                raise ValueError(f"Missing required CDK context: {name}")
-            return str(value) if value is not None else ""
-
-        budget_name = ctx("budgetName", "comarch-baselinker-sync-monthly-budget")
-        budget_alert_email = ctx("budgetAlertEmail", "")
-        budget_limit_usd = ctx("budgetLimitUsd", "30")
+        budget_name = get_context_text(
+            self.node,
+            "budgetName",
+            "comarch-baselinker-sync-monthly-budget",
+        )
+        budget_alert_email = get_context_text(
+            self.node,
+            "budgetAlertEmail",
+            "",
+        )
+        budget_limit_usd = get_context_text(
+            self.node,
+            "budgetLimitUsd",
+            "30",
+        )
 
         subscribers = []
         if budget_alert_email.strip() != "":

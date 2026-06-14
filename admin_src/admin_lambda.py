@@ -416,7 +416,11 @@ def _unauthorized() -> dict:
 
 
 def _headers(event: dict) -> dict:
-    return {str(k).lower(): str(v) for k, v in (event.get("headers") or {}).items()}
+    normalized_headers = {}
+    request_headers = event.get("headers") or {}
+    for header_name, header_value in request_headers.items():
+        normalized_headers[str(header_name).lower()] = str(header_value)
+    return normalized_headers
 
 
 def _is_authorized(event: dict) -> bool:
@@ -448,10 +452,13 @@ def _request_info(event: dict) -> tuple[str, str]:
 
 def _load_status() -> dict:
     try:
-        raw = ssm.get_parameter(Name=STATUS_PARAM, WithDecryption=False)["Parameter"]["Value"]
-        data = json.loads(raw)
-        if isinstance(data, dict):
-            return data
+        parameter_value = ssm.get_parameter(
+            Name=STATUS_PARAM,
+            WithDecryption=False,
+        )["Parameter"]["Value"]
+        status_payload = json.loads(parameter_value)
+        if isinstance(status_payload, dict):
+            return status_payload
     except Exception as exc:
         return {"status": "unknown", "error": f"{type(exc).__name__}: {exc}"}
     return {"status": "unknown"}
@@ -466,27 +473,32 @@ def _next_midnight_pl() -> str:
 
 
 def _load_schedule() -> dict:
-    out = {
+    schedule_status = {
         "name": SCHEDULE_NAME,
         "group": SCHEDULE_GROUP,
         "next_run_iso": _next_midnight_pl(),
     }
     try:
-        data = scheduler.get_schedule(Name=SCHEDULE_NAME, GroupName=SCHEDULE_GROUP)
-        out.update(
+        schedule_response = scheduler.get_schedule(
+            Name=SCHEDULE_NAME,
+            GroupName=SCHEDULE_GROUP,
+        )
+        schedule_status.update(
             {
-                "state": data.get("State"),
-                "expression": data.get("ScheduleExpression"),
-                "timezone": data.get("ScheduleExpressionTimezone"),
+                "state": schedule_response.get("State"),
+                "expression": schedule_response.get("ScheduleExpression"),
+                "timezone": schedule_response.get("ScheduleExpressionTimezone"),
             }
         )
     except Exception as exc:
-        out["error"] = f"{type(exc).__name__}: {exc}"
-    return out
+        schedule_status["error"] = f"{type(exc).__name__}: {exc}"
+    return schedule_status
 
 
 def _clean(value: object) -> str:
-    return "" if value is None else str(value).strip()
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _parse_int(value: object, default: int = 0) -> int:
@@ -512,7 +524,7 @@ def _first_dict(*items: object) -> dict:
 
 def _load_usd_to_pln_rate() -> dict:
     fallback_rate = max(0.0, _parse_float(BUDGET_USD_TO_PLN_RATE, 4.0))
-    fallback = {
+    fallback_exchange_rate = {
         "rate": fallback_rate,
         "source": "fallback_env",
         "effective_date": "",
@@ -520,71 +532,105 @@ def _load_usd_to_pln_rate() -> dict:
         "error": "",
     }
     if BUDGET_FX_RATE_SSM_PARAM.strip() == "":
-        fallback["error"] = _t("error_missing_fx_param")
-        return fallback
+        fallback_exchange_rate["error"] = _t("error_missing_fx_param")
+        return fallback_exchange_rate
+
     try:
-        raw = ssm.get_parameter(Name=BUDGET_FX_RATE_SSM_PARAM, WithDecryption=False)[
-            "Parameter"
-        ]["Value"]
-        payload = json.loads(raw)
-        if not isinstance(payload, dict):
+        parameter_value = ssm.get_parameter(
+            Name=BUDGET_FX_RATE_SSM_PARAM,
+            WithDecryption=False,
+        )["Parameter"]["Value"]
+        exchange_rate_payload = json.loads(parameter_value)
+        if not isinstance(exchange_rate_payload, dict):
             raise ValueError("SSM FX parameter is not a JSON object.")
-        rate = _parse_float(payload.get("rate"), 0.0)
+
+        rate = _parse_float(exchange_rate_payload.get("rate"), 0.0)
         if rate <= 0:
             raise ValueError("SSM FX parameter does not contain a positive rate.")
         return {
             "rate": rate,
-            "source": _clean(payload.get("source")) or "ssm",
-            "effective_date": _clean(payload.get("effective_date")),
-            "fetched_at_iso": _clean(payload.get("fetched_at_iso")),
-            "error": _clean(payload.get("error")),
+            "source": _clean(exchange_rate_payload.get("source")) or "ssm",
+            "effective_date": _clean(
+                exchange_rate_payload.get("effective_date")
+            ),
+            "fetched_at_iso": _clean(
+                exchange_rate_payload.get("fetched_at_iso")
+            ),
+            "error": _clean(exchange_rate_payload.get("error")),
         }
     except Exception as exc:
-        fallback["error"] = f"{type(exc).__name__}: {exc}"
-        return fallback
+        fallback_exchange_rate["error"] = f"{type(exc).__name__}: {exc}"
+        return fallback_exchange_rate
 
 
 def _load_budget_status() -> dict:
-    limit_default = max(0.0, _parse_float(BUDGET_LIMIT_USD, 30.0))
-    fx = _load_usd_to_pln_rate()
-    usd_to_pln_rate = max(0.0, _parse_float(fx.get("rate"), 4.0))
-    out = {
+    default_limit_usd = max(0.0, _parse_float(BUDGET_LIMIT_USD, 30.0))
+    exchange_rate = _load_usd_to_pln_rate()
+    usd_to_pln_rate = max(
+        0.0,
+        _parse_float(exchange_rate.get("rate"), 4.0),
+    )
+    budget_status = {
         "name": BUDGET_NAME,
-        "limit_usd": round(limit_default, 2),
+        "limit_usd": round(default_limit_usd, 2),
         "spent_usd": 0.0,
-        "remaining_usd": round(limit_default, 2),
-        "limit_pln": round(limit_default * usd_to_pln_rate, 2),
+        "remaining_usd": round(default_limit_usd, 2),
+        "limit_pln": round(default_limit_usd * usd_to_pln_rate, 2),
         "spent_pln": 0.0,
-        "remaining_pln": round(limit_default * usd_to_pln_rate, 2),
+        "remaining_pln": round(default_limit_usd * usd_to_pln_rate, 2),
         "percent_used": 0.0,
         "currency": "PLN",
         "source_currency": "USD",
         "display_currency": "PLN",
         "usd_to_pln_rate": round(usd_to_pln_rate, 4),
-        "usd_to_pln_source": fx.get("source", ""),
-        "usd_to_pln_effective_date": fx.get("effective_date", ""),
-        "usd_to_pln_fetched_at_iso": fx.get("fetched_at_iso", ""),
-        "usd_to_pln_error": fx.get("error", ""),
+        "usd_to_pln_source": exchange_rate.get("source", ""),
+        "usd_to_pln_effective_date": exchange_rate.get("effective_date", ""),
+        "usd_to_pln_fetched_at_iso": exchange_rate.get("fetched_at_iso", ""),
+        "usd_to_pln_error": exchange_rate.get("error", ""),
         "source": "aws_budgets",
         "error": "",
     }
     if AWS_ACCOUNT_ID.strip() == "":
-        out["error"] = _t("error_missing_account")
-        return out
+        budget_status["error"] = _t("error_missing_account")
+        return budget_status
+
     try:
-        data = budgets.describe_budget(AccountId=AWS_ACCOUNT_ID, BudgetName=BUDGET_NAME)
-        budget = data.get("Budget", {}) if isinstance(data, dict) else {}
-        limit = budget.get("BudgetLimit", {}) if isinstance(budget.get("BudgetLimit"), dict) else {}
-        spend = (
-            budget.get("CalculatedSpend", {}).get("ActualSpend", {})
-            if isinstance(budget.get("CalculatedSpend"), dict)
-            else {}
+        budget_response = budgets.describe_budget(
+            AccountId=AWS_ACCOUNT_ID,
+            BudgetName=BUDGET_NAME,
         )
-        limit_usd = _parse_float(limit.get("Amount"), limit_default)
-        spent_usd = _parse_float(spend.get("Amount"), 0.0)
+        budget = {}
+        if isinstance(budget_response, dict):
+            budget = budget_response.get("Budget", {})
+        if not isinstance(budget, dict):
+            budget = {}
+
+        budget_limit = budget.get("BudgetLimit", {})
+        if not isinstance(budget_limit, dict):
+            budget_limit = {}
+
+        calculated_spend = budget.get("CalculatedSpend", {})
+        if not isinstance(calculated_spend, dict):
+            calculated_spend = {}
+
+        actual_spend = calculated_spend.get("ActualSpend", {})
+        if not isinstance(actual_spend, dict):
+            actual_spend = {}
+
+        limit_usd = _parse_float(budget_limit.get("Amount"), default_limit_usd)
+        spent_usd = _parse_float(actual_spend.get("Amount"), 0.0)
         remaining_usd = max(0.0, limit_usd - spent_usd)
-        source_currency = _clean(spend.get("Unit") or limit.get("Unit") or "USD") or "USD"
-        out.update(
+        source_currency = _clean(
+            actual_spend.get("Unit") or budget_limit.get("Unit") or "USD"
+        )
+        if source_currency == "":
+            source_currency = "USD"
+
+        percent_used = 0.0
+        if limit_usd > 0:
+            percent_used = round(spent_usd * 100.0 / limit_usd, 2)
+
+        budget_status.update(
             {
                 "limit_usd": round(limit_usd, 2),
                 "spent_usd": round(spent_usd, 4),
@@ -592,23 +638,27 @@ def _load_budget_status() -> dict:
                 "limit_pln": round(limit_usd * usd_to_pln_rate, 2),
                 "spent_pln": round(spent_usd * usd_to_pln_rate, 2),
                 "remaining_pln": round(remaining_usd * usd_to_pln_rate, 2),
-                "percent_used": round((spent_usd * 100.0 / limit_usd), 2)
-                if limit_usd > 0
-                else 0.0,
+                "percent_used": percent_used,
                 "currency": "PLN",
                 "source_currency": source_currency,
                 "display_currency": "PLN",
                 "usd_to_pln_rate": round(usd_to_pln_rate, 4),
-                "usd_to_pln_source": fx.get("source", ""),
-                "usd_to_pln_effective_date": fx.get("effective_date", ""),
-                "usd_to_pln_fetched_at_iso": fx.get("fetched_at_iso", ""),
-                "usd_to_pln_error": fx.get("error", ""),
+                "usd_to_pln_source": exchange_rate.get("source", ""),
+                "usd_to_pln_effective_date": exchange_rate.get(
+                    "effective_date",
+                    "",
+                ),
+                "usd_to_pln_fetched_at_iso": exchange_rate.get(
+                    "fetched_at_iso",
+                    "",
+                ),
+                "usd_to_pln_error": exchange_rate.get("error", ""),
                 "updated_at_iso": datetime.now(POLAND_TZ).isoformat(),
             }
         )
     except Exception as exc:
-        out["error"] = f"{type(exc).__name__}: {exc}"
-    return out
+        budget_status["error"] = f"{type(exc).__name__}: {exc}"
+    return budget_status
 
 
 def _default_sync_config() -> dict:
@@ -628,26 +678,40 @@ def _load_sync_config() -> dict:
     if SYNC_CONFIG_PARAM == "":
         return config
     try:
-        raw = ssm.get_parameter(Name=SYNC_CONFIG_PARAM, WithDecryption=True)["Parameter"]["Value"]
-        parsed = json.loads(raw)
+        parameter_value = ssm.get_parameter(
+            Name=SYNC_CONFIG_PARAM,
+            WithDecryption=True,
+        )["Parameter"]["Value"]
+        saved_config = json.loads(parameter_value)
     except Exception:
         return config
-    if not isinstance(parsed, dict):
+    if not isinstance(saved_config, dict):
         return config
-    if _clean(parsed.get("comarch_xml_url")):
-        config["comarch_xml_url"] = _clean(parsed.get("comarch_xml_url"))
-    inv_id = _parse_int(parsed.get("bl_inventory_id"), 0)
-    if inv_id > 0:
-        config["bl_inventory_id"] = inv_id
-    if _clean(parsed.get("bl_inventory_name")):
-        config["bl_inventory_name"] = _clean(parsed.get("bl_inventory_name"))
-    if _clean(parsed.get("bl_warehouse_id")):
-        config["bl_warehouse_id"] = _clean(parsed.get("bl_warehouse_id"))
-    if _clean(parsed.get("bl_warehouse_name")):
-        config["bl_warehouse_name"] = _clean(parsed.get("bl_warehouse_name"))
-    rpm = _parse_int(parsed.get("bl_api_max_rpm"), 0)
-    if rpm > 0:
-        config["bl_api_max_rpm"] = max(1, min(100, rpm))
+
+    comarch_xml_url = _clean(saved_config.get("comarch_xml_url"))
+    if comarch_xml_url != "":
+        config["comarch_xml_url"] = comarch_xml_url
+
+    inventory_id = _parse_int(saved_config.get("bl_inventory_id"), 0)
+    if inventory_id > 0:
+        config["bl_inventory_id"] = inventory_id
+
+    inventory_name = _clean(saved_config.get("bl_inventory_name"))
+    if inventory_name != "":
+        config["bl_inventory_name"] = inventory_name
+
+    warehouse_id = _clean(saved_config.get("bl_warehouse_id"))
+    if warehouse_id != "":
+        config["bl_warehouse_id"] = warehouse_id
+
+    warehouse_name = _clean(saved_config.get("bl_warehouse_name"))
+    if warehouse_name != "":
+        config["bl_warehouse_name"] = warehouse_name
+
+    api_max_rpm = _parse_int(saved_config.get("bl_api_max_rpm"), 0)
+    if api_max_rpm > 0:
+        config["bl_api_max_rpm"] = max(1, min(100, api_max_rpm))
+
     config["source"] = "ssm_parameter"
     return config
 
@@ -673,23 +737,26 @@ def _save_sync_config(config: dict) -> None:
 
 
 def _get_bl_api_token() -> str:
-    raw = ssm.get_parameter(Name=BL_API_TOKEN_SSM_PARAM, WithDecryption=True)["Parameter"]["Value"]
-    token = _clean(raw)
+    parameter_value = ssm.get_parameter(
+        Name=BL_API_TOKEN_SSM_PARAM,
+        WithDecryption=True,
+    )["Parameter"]["Value"]
+    token = _clean(parameter_value)
     if token == "":
         raise RuntimeError("BL API token is empty.")
     return token
 
 
 def _bl_api_call(method: str, parameters: Optional[dict] = None, timeout_sec: int = 30) -> dict:
-    payload = urllib.parse.urlencode(
+    request_body = urllib.parse.urlencode(
         {
             "method": method,
             "parameters": json.dumps(parameters or {}, ensure_ascii=False),
         }
     ).encode("utf-8")
-    req = urllib.request.Request(
+    request = urllib.request.Request(
         BL_API_URL,
-        data=payload,
+        data=request_body,
         headers={
             "X-BLToken": _get_bl_api_token(),
             "Content-Type": "application/x-www-form-urlencoded",
@@ -698,13 +765,14 @@ def _bl_api_call(method: str, parameters: Optional[dict] = None, timeout_sec: in
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    if not isinstance(data, dict):
+    with urllib.request.urlopen(request, timeout=timeout_sec) as response:
+        response_payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(response_payload, dict):
         raise RuntimeError(f"{method}: malformed response")
-    if data.get("status") != "SUCCESS":
-        raise RuntimeError(f"{method}: {data.get('error_message', 'unknown error')}")
-    return data
+    if response_payload.get("status") != "SUCCESS":
+        error_message = response_payload.get("error_message", "unknown error")
+        raise RuntimeError(f"{method}: {error_message}")
+    return response_payload
 
 
 def _name_from_row(row: dict, fallback: str) -> str:
@@ -715,73 +783,115 @@ def _name_from_row(row: dict, fallback: str) -> str:
     return fallback
 
 
+def _warehouse_ids_from_inventory(inventory_row: dict) -> list[str]:
+    raw_warehouse_ids = inventory_row.get("warehouses", [])
+    if not isinstance(raw_warehouse_ids, list):
+        return []
+
+    warehouse_ids = []
+    for raw_warehouse_id in raw_warehouse_ids:
+        warehouse_id = _clean(raw_warehouse_id)
+        if warehouse_id != "":
+            warehouse_ids.append(warehouse_id)
+    return warehouse_ids
+
+
+def _normalize_warehouse_rows(raw_warehouses: object) -> list[dict]:
+    if isinstance(raw_warehouses, list):
+        return [row for row in raw_warehouses if isinstance(row, dict)]
+
+    normalized_rows = []
+    if not isinstance(raw_warehouses, dict):
+        return normalized_rows
+
+    for warehouse_id, warehouse_value in raw_warehouses.items():
+        if isinstance(warehouse_value, dict):
+            normalized_row = dict(warehouse_value)
+            normalized_row["warehouse_id"] = warehouse_id
+        else:
+            normalized_row = {
+                "warehouse_id": warehouse_id,
+                "name": warehouse_value,
+            }
+        normalized_rows.append(normalized_row)
+    return normalized_rows
+
+
 def _load_bl_options() -> dict:
-    inventories_data = _bl_api_call("getInventories")
-    warehouses_data = _bl_api_call("getInventoryWarehouses")
+    inventories_response = _bl_api_call("getInventories")
+    warehouses_response = _bl_api_call("getInventoryWarehouses")
 
     inventories = []
-    for row in inventories_data.get("inventories", []):
-        if not isinstance(row, dict):
+    for inventory_row in inventories_response.get("inventories", []):
+        if not isinstance(inventory_row, dict):
             continue
-        inv_id = _parse_int(row.get("inventory_id"), 0)
-        if inv_id <= 0:
+        inventory_id = _parse_int(inventory_row.get("inventory_id"), 0)
+        if inventory_id <= 0:
             continue
-        raw_warehouses = row.get("warehouses", [])
-        warehouse_ids = []
-        if isinstance(raw_warehouses, list):
-            warehouse_ids = [_clean(item) for item in raw_warehouses if _clean(item)]
+
         inventories.append(
             {
-                "id": inv_id,
-                "name": _name_from_row(row, _t("inventory_fallback", id=inv_id)),
-                "warehouse_ids": warehouse_ids,
+                "id": inventory_id,
+                "name": _name_from_row(
+                    inventory_row,
+                    _t("inventory_fallback", id=inventory_id),
+                ),
+                "warehouse_ids": _warehouse_ids_from_inventory(inventory_row),
             }
         )
 
     referenced_warehouse_ids = []
     for inventory in inventories:
         for warehouse_id in inventory.get("warehouse_ids", []):
-            if warehouse_id and warehouse_id not in referenced_warehouse_ids:
+            if warehouse_id == "":
+                continue
+            if warehouse_id not in referenced_warehouse_ids:
                 referenced_warehouse_ids.append(warehouse_id)
 
     warehouse_name_by_raw_id = {}
-    raw_warehouses = warehouses_data.get("warehouses", [])
-    rows = []
-    if isinstance(raw_warehouses, dict):
-        rows = [
-            {**value, "warehouse_id": key} if isinstance(value, dict) else {"warehouse_id": key, "name": value}
-            for key, value in raw_warehouses.items()
-        ]
-    elif isinstance(raw_warehouses, list):
-        rows = raw_warehouses
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        warehouse_id = _clean(row.get("warehouse_id") or row.get("id"))
+    warehouse_rows = _normalize_warehouse_rows(
+        warehouses_response.get("warehouses", [])
+    )
+    for warehouse_row in warehouse_rows:
+        warehouse_id = _clean(
+            warehouse_row.get("warehouse_id") or warehouse_row.get("id")
+        )
         if warehouse_id == "":
             continue
         warehouse_name_by_raw_id[warehouse_id] = _name_from_row(
-            row,
+            warehouse_row,
             _t("warehouse_fallback", id=warehouse_id),
         )
 
     warehouses = []
     used_warehouse_ids = set()
     for warehouse_id in referenced_warehouse_ids:
-        raw_id = warehouse_id.split("_", 1)[1] if "_" in warehouse_id else warehouse_id
-        name = (
+        raw_warehouse_id = warehouse_id
+        if "_" in warehouse_id:
+            raw_warehouse_id = warehouse_id.split("_", 1)[1]
+
+        warehouse_name = (
             warehouse_name_by_raw_id.get(warehouse_id)
-            or warehouse_name_by_raw_id.get(raw_id)
+            or warehouse_name_by_raw_id.get(raw_warehouse_id)
             or _t("warehouse_fallback", id=warehouse_id)
         )
-        warehouses.append({"id": warehouse_id, "name": name})
+        warehouses.append({"id": warehouse_id, "name": warehouse_name})
         used_warehouse_ids.add(warehouse_id)
 
-    for raw_id, name in warehouse_name_by_raw_id.items():
-        prefixed_candidates = {raw_id, f"bl_{raw_id}", f"shop_{raw_id}"}
+    for raw_warehouse_id, warehouse_name in warehouse_name_by_raw_id.items():
+        prefixed_candidates = {
+            raw_warehouse_id,
+            f"bl_{raw_warehouse_id}",
+            f"shop_{raw_warehouse_id}",
+        }
         if prefixed_candidates & used_warehouse_ids:
             continue
-        warehouses.append({"id": raw_id, "name": name})
+        warehouses.append(
+            {
+                "id": raw_warehouse_id,
+                "name": warehouse_name,
+            }
+        )
 
     inventories.sort(key=lambda item: item["name"].lower())
     warehouses.sort(key=lambda item: item["name"].lower())
@@ -799,36 +909,45 @@ def _config_payload() -> dict:
 
 
 def _request_json(event: dict) -> dict:
-    raw = event.get("body") or ""
+    request_body = event.get("body") or ""
     if event.get("isBase64Encoded"):
-        raw = base64.b64decode(raw).decode("utf-8")
-    if not isinstance(raw, str) or raw.strip() == "":
+        request_body = base64.b64decode(request_body).decode("utf-8")
+    if not isinstance(request_body, str) or request_body.strip() == "":
         return {}
-    parsed = json.loads(raw)
-    return parsed if isinstance(parsed, dict) else {}
+    parsed_body = json.loads(request_body)
+    if not isinstance(parsed_body, dict):
+        return {}
+    return parsed_body
 
 
-def _validate_sync_config(config_raw: dict, options: dict) -> dict:
-    comarch_url = _clean(config_raw.get("comarch_xml_url"))
+def _validate_sync_config(requested_config: dict, options: dict) -> dict:
+    comarch_url = _clean(requested_config.get("comarch_xml_url"))
     if not comarch_url.startswith("https://"):
         raise ValueError(_t("validation_https"))
 
-    inventory_id = _parse_int(config_raw.get("bl_inventory_id"), 0)
-    inventory_by_id = {int(item["id"]): item for item in options.get("inventories", [])}
+    inventory_by_id = {}
+    for inventory in options.get("inventories", []):
+        inventory_by_id[int(inventory["id"])] = inventory
+
+    inventory_id = _parse_int(requested_config.get("bl_inventory_id"), 0)
     if inventory_id <= 0 or inventory_id not in inventory_by_id:
         raise ValueError(_t("validation_inventory"))
     inventory = inventory_by_id[inventory_id]
 
-    warehouse_id = _clean(config_raw.get("bl_warehouse_id"))
-    warehouse_by_id = {str(item["id"]): item for item in options.get("warehouses", [])}
+    warehouse_by_id = {}
+    for warehouse in options.get("warehouses", []):
+        warehouse_by_id[str(warehouse["id"])] = warehouse
+
+    warehouse_id = _clean(requested_config.get("bl_warehouse_id"))
     if warehouse_id == "" or warehouse_id not in warehouse_by_id:
         raise ValueError(_t("validation_warehouse"))
+
     allowed_warehouses = set(inventory.get("warehouse_ids") or [])
     if allowed_warehouses and warehouse_id not in allowed_warehouses:
         raise ValueError(_t("validation_warehouse_inventory"))
 
-    rpm = _parse_int(config_raw.get("bl_api_max_rpm"), 90)
-    if rpm < 1 or rpm > 100:
+    api_max_rpm = _parse_int(requested_config.get("bl_api_max_rpm"), 90)
+    if api_max_rpm < 1 or api_max_rpm > 100:
         raise ValueError(_t("validation_rpm"))
 
     return {
@@ -837,7 +956,7 @@ def _validate_sync_config(config_raw: dict, options: dict) -> dict:
         "bl_inventory_name": inventory["name"],
         "bl_warehouse_id": warehouse_id,
         "bl_warehouse_name": warehouse_by_id[warehouse_id]["name"],
-        "bl_api_max_rpm": rpm,
+        "bl_api_max_rpm": api_max_rpm,
     }
 
 
@@ -1570,90 +1689,98 @@ def _page() -> str:
     let configOptions = { inventories: [], warehouses: [] };
     let lastSync = {};
 
-    function tr(key, values = {}) {
+    function translate(key, values = {}) {
       let text = String(I18N[key] || key);
-      Object.entries(values).forEach(([name, value]) => {
+      for (const [name, value] of Object.entries(values)) {
         text = text.replaceAll(`{${name}}`, String(value));
-      });
+      }
       return text;
     }
 
-    function fmt(value) {
-      if (!value) return '-';
+    function formatDateTime(value) {
+      if (!value) {
+        return '-';
+      }
       const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return value;
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
       return date.toLocaleString(I18N.date_locale || 'en-GB');
     }
 
     function statusLabel(status) {
       const map = {
-        running: tr('status_running'),
-        success: tr('status_success'),
-        error: tr('status_error'),
-        unknown: tr('status_unknown')
+        running: translate('status_running'),
+        success: translate('status_success'),
+        error: translate('status_error'),
+        unknown: translate('status_unknown')
       };
-      return map[status] || tr('status_unknown');
+      return map[status] || translate('status_unknown');
     }
 
     function messageLabel(text) {
-      const raw = String(text || '').trim();
-      if (!raw) return '';
-      const map = {
-        'Sync started.': tr('message_started'),
-        'Sync in progress.': tr('message_progress'),
-        'Sync finished.': tr('message_finished'),
-        'Sync queued.': tr('message_queued'),
-        'Sync is already running.': tr('message_already_running'),
-        'Sync skipped; pre-audit diff_total=0.': tr('message_no_changes'),
-        'Not found': tr('message_not_found'),
-        'Unauthorized': tr('message_unauthorized')
+      const normalizedText = String(text || '').trim();
+      if (!normalizedText) {
+        return '';
+      }
+      const knownMessages = {
+        'Sync started.': translate('message_started'),
+        'Sync in progress.': translate('message_progress'),
+        'Sync finished.': translate('message_finished'),
+        'Sync queued.': translate('message_queued'),
+        'Sync is already running.': translate('message_already_running'),
+        'Sync skipped; pre-audit diff_total=0.': translate('message_no_changes'),
+        'Not found': translate('message_not_found'),
+        'Unauthorized': translate('message_unauthorized')
       };
-      if (map[raw]) return map[raw];
+      if (knownMessages[normalizedText]) {
+        return knownMessages[normalizedText];
+      }
 
-      const lower = raw.toLowerCase();
-      if (lower.includes('accessdenied') || lower.includes('not authorized') || lower.includes('unauthorized')) {
-        return tr('error_access');
+      const lowercaseText = normalizedText.toLowerCase();
+      if (lowercaseText.includes('accessdenied') || lowercaseText.includes('not authorized') || lowercaseText.includes('unauthorized')) {
+        return translate('error_access');
       }
-      if (lower.includes('expiredtoken') || lower.includes('security token') || lower.includes('invalidclienttokenid')) {
-        return tr('error_credentials');
+      if (lowercaseText.includes('expiredtoken') || lowercaseText.includes('security token') || lowercaseText.includes('invalidclienttokenid')) {
+        return translate('error_credentials');
       }
-      if (lower.includes('throttl') || lower.includes('too many requests') || lower.includes('rate limit') || lower.includes('429')) {
-        return tr('error_rate');
+      if (lowercaseText.includes('throttl') || lowercaseText.includes('too many requests') || lowercaseText.includes('rate limit') || lowercaseText.includes('429')) {
+        return translate('error_rate');
       }
-      if (lower.includes('timeout') || lower.includes('timed out')) {
-        return tr('error_timeout');
+      if (lowercaseText.includes('timeout') || lowercaseText.includes('timed out')) {
+        return translate('error_timeout');
       }
-      if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('could not connect') || lower.includes('endpointconnection') || lower.includes('connection')) {
-        return tr('error_connection');
+      if (lowercaseText.includes('failed to fetch') || lowercaseText.includes('networkerror') || lowercaseText.includes('could not connect') || lowercaseText.includes('endpointconnection') || lowercaseText.includes('connection')) {
+        return translate('error_connection');
       }
-      if (lower.includes('bl api token') || lower.includes('bltoken') || lower.includes('api token')) {
-        return tr('error_token');
+      if (lowercaseText.includes('bl api token') || lowercaseText.includes('bltoken') || lowercaseText.includes('api token')) {
+        return translate('error_token');
       }
-      if (lower.includes('baselinker') || lower.includes('getinventories') || lower.includes('getinventorywarehouses')) {
-        return tr('error_baselinker');
+      if (lowercaseText.includes('baselinker') || lowercaseText.includes('getinventories') || lowercaseText.includes('getinventorywarehouses')) {
+        return translate('error_baselinker');
       }
-      if (lower.includes('failed to save sync config')) {
-        return tr('error_save_config');
+      if (lowercaseText.includes('failed to save sync config')) {
+        return translate('error_save_config');
       }
-      if (lower.includes('failed to load sync config')) {
-        return tr('error_load_config');
+      if (lowercaseText.includes('failed to load sync config')) {
+        return translate('error_load_config');
       }
-      if (lower.includes('malformed') || lower.includes('json') || lower.includes('decode')) {
-        return tr('error_format');
+      if (lowercaseText.includes('malformed') || lowercaseText.includes('json') || lowercaseText.includes('decode')) {
+        return translate('error_format');
       }
-      return tr('error_generic');
+      return translate('error_generic');
     }
 
     function statusTextForStep(status) {
       const map = {
-        waiting: tr('step_waiting'),
-        ready: tr('step_ready'),
-        running: tr('step_running'),
-        done: tr('step_done'),
-        skipped: tr('step_skipped'),
-        error: tr('step_error')
+        waiting: translate('step_waiting'),
+        ready: translate('step_ready'),
+        running: translate('step_running'),
+        done: translate('step_done'),
+        skipped: translate('step_skipped'),
+        error: translate('step_error')
       };
-      return map[status] || status || tr('step_waiting');
+      return map[status] || status || translate('step_waiting');
     }
 
     function renderAttention(sync) {
@@ -1669,9 +1796,9 @@ def _page() -> str:
 
     function renderSteps(steps, summaryLines) {
       const safeSteps = Array.isArray(steps) && steps.length ? steps : [
-        { label: tr('step_pre'), status: 'waiting', summary: tr('fallback_pre_waiting') },
-        { label: tr('step_sync'), status: 'waiting', summary: tr('fallback_sync_waiting') },
-        { label: tr('step_post'), status: 'waiting', summary: tr('fallback_post_waiting') }
+        { label: translate('step_pre'), status: 'waiting', summary: translate('fallback_pre_waiting') },
+        { label: translate('step_sync'), status: 'waiting', summary: translate('fallback_sync_waiting') },
+        { label: translate('step_post'), status: 'waiting', summary: translate('fallback_post_waiting') }
       ];
       stepsList.innerHTML = safeSteps.map((step) => `
         <div class="step ${step.status || 'waiting'}">
@@ -1685,19 +1812,19 @@ def _page() -> str:
       const lines = Array.isArray(summaryLines) ? summaryLines.filter(Boolean) : [];
       summaryText.innerHTML = lines.length
         ? lines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')
-        : tr('summary_placeholder');
+        : translate('summary_placeholder');
     }
 
     function renderProgressDetails(sync) {
       const stage = sync.sync_stage || '';
       if (stage === 'pre_audit') {
-        return tr('progress_pre');
+        return translate('progress_pre');
       }
       if (stage === 'post_audit') {
-        return tr('progress_post');
+        return translate('progress_post');
       }
       if (sync.sync_skipped_no_changes) {
-        return tr('progress_no_changes');
+        return translate('progress_no_changes');
       }
       const writeTarget = Number(sync.global_write_target || sync.global_total_records || 0);
       const written = Number(sync.global_updated || sync.global_requested || sync.global_processed || 0);
@@ -1707,15 +1834,15 @@ def _page() -> str:
       const mutationDone = Number(sync.mutation_done || (written + deleted));
       if (mutationTotal > 0 || mutationDone > 0) {
         const doneText = sync.status === 'running'
-          ? tr('progress_running', { done: mutationDone, total: mutationTotal })
-          : tr('progress_finished', { done: mutationDone });
-        return tr('progress_details', {
+          ? translate('progress_running', { done: mutationDone, total: mutationTotal })
+          : translate('progress_finished', { done: mutationDone });
+        return translate('progress_details', {
           done_text: doneText,
           written,
           deleted
         });
       }
-      return tr('progress_inactive');
+      return translate('progress_inactive');
     }
 
     function renderCounters(sync) {
@@ -1726,7 +1853,7 @@ def _page() -> str:
       const extra = Number(pre.extra_in_bl || sync.global_delete_target || 0);
       const unchanged = Number(sync.unchanged_records || 0);
       if (diffTotal > 0 || changed > 0 || missing > 0 || extra > 0 || unchanged > 0) {
-        countersText.textContent = tr('counters', {
+        countersText.textContent = translate('counters', {
           diff: diffTotal,
           changed,
           missing,
@@ -1734,7 +1861,7 @@ def _page() -> str:
           unchanged
         });
       } else if (sync.status === 'running' && sync.sync_stage === 'pre_audit') {
-        countersText.textContent = tr('pre_checking');
+        countersText.textContent = translate('pre_checking');
       } else {
         countersText.textContent = '-';
       }
@@ -1748,11 +1875,11 @@ def _page() -> str:
         progress_percent: 0,
         message: 'Sync queued.',
         steps: [
-          { label: tr('step_pre'), status: 'running', summary: tr('queued_pre') },
-          { label: tr('step_sync'), status: 'waiting', summary: tr('queued_sync') },
-          { label: tr('step_post'), status: 'waiting', summary: tr('queued_post') }
+          { label: translate('step_pre'), status: 'running', summary: translate('queued_pre') },
+          { label: translate('step_sync'), status: 'waiting', summary: translate('queued_sync') },
+          { label: translate('step_post'), status: 'waiting', summary: translate('queued_post') }
         ],
-        summary_lines: [tr('queued_summary')]
+        summary_lines: [translate('queued_summary')]
       };
       lastSync = optimistic;
       statusText.textContent = statusLabel(optimistic.status);
@@ -1763,7 +1890,7 @@ def _page() -> str:
       progressBar.style.width = '0%';
       recordsText.textContent = renderProgressDetails(optimistic);
       etaText.textContent = '-';
-      updatedText.textContent = tr('awaiting_status');
+      updatedText.textContent = translate('awaiting_status');
       renderSteps(optimistic.steps, optimistic.summary_lines);
       renderCounters(optimistic);
       runText.textContent = '';
@@ -1790,29 +1917,29 @@ def _page() -> str:
       const percent = Number(data.percent_used || 0);
       const displayPercent = limitWhole > 0 ? (spentWhole * 100 / limitWhole) : percent;
       const currency = data.display_currency || data.currency || 'PLN';
-      const currencyLabel = currency === 'PLN' ? tr('currency_pln') : currency;
+      const currencyLabel = currency === 'PLN' ? translate('currency_pln') : currency;
       const rate = Number(data.usd_to_pln_rate || 0);
       budgetText.textContent = `${spentWhole} / ${limitWhole} ${currencyLabel}`;
       budgetText.className = `value ${displayPercent >= 100 ? 'budget-danger' : displayPercent >= 80 ? 'budget-warn' : 'budget-ok'}`;
       if (data.error) {
-        budgetSmall.textContent = tr('budget_error', { error: messageLabel(data.error) });
+        budgetSmall.textContent = translate('budget_error', { error: messageLabel(data.error) });
       } else {
         const fxSource = data.usd_to_pln_source || '';
         const fxDate = data.usd_to_pln_effective_date || '';
         const fxFetchedAt = data.usd_to_pln_fetched_at_iso || '';
         let rateText = '';
         if (rate > 0 && fxSource === 'nbp') {
-          rateText = tr('budget_nbp_rate', {
-            date: fxDate ? tr('budget_rate_date', { date: fxDate }) : '',
+          rateText = translate('budget_nbp_rate', {
+            date: fxDate ? translate('budget_rate_date', { date: fxDate }) : '',
             rate: rate.toFixed(2)
           });
         } else if (rate > 0) {
-          rateText = tr('budget_fallback_rate', {
-            date: fxFetchedAt ? tr('budget_rate_saved', { date: fmt(fxFetchedAt) }) : '',
+          rateText = translate('budget_fallback_rate', {
+            date: fxFetchedAt ? translate('budget_rate_saved', { date: formatDateTime(fxFetchedAt) }) : '',
             rate: rate.toFixed(2)
           });
         }
-        budgetSmall.textContent = tr('budget_summary', {
+        budgetSmall.textContent = translate('budget_summary', {
           percent: displayPercent.toFixed(1),
           remaining: remainingWhole,
           currency: currencyLabel,
@@ -1868,7 +1995,7 @@ def _page() -> str:
         const allowedIds = new Set(inventory.warehouse_ids.map(String));
         allowed = configOptions.warehouses.filter((item) => allowedIds.has(String(item.id)));
       }
-      fillSelect(warehouseSelect, allowed, selectedValue || warehouseSelect.value, tr('empty_warehouses'));
+      fillSelect(warehouseSelect, allowed, selectedValue || warehouseSelect.value, translate('empty_warehouses'));
     }
 
     async function loadConfig() {
@@ -1877,14 +2004,14 @@ def _page() -> str:
       try {
         const res = await fetch('/api/config', { credentials: 'include' });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.message || tr('config_load_http', { status: res.status }));
+        if (!res.ok) throw new Error(data.message || translate('config_load_http', { status: res.status }));
         const config = data.config || {};
         configOptions = data.options || { inventories: [], warehouses: [] };
         comarchUrlInput.value = config.comarch_xml_url || '';
         rpmInput.value = config.bl_api_max_rpm || 90;
-        fillSelect(inventorySelect, configOptions.inventories || [], config.bl_inventory_id, tr('empty_inventories'));
+        fillSelect(inventorySelect, configOptions.inventories || [], config.bl_inventory_id, translate('empty_inventories'));
         refreshWarehouseOptions(config.bl_warehouse_id);
-        configNote.innerHTML = tr('config_note');
+        configNote.innerHTML = translate('config_note');
       } catch (err) {
         configNote.textContent = messageLabel(err.message);
       } finally {
@@ -1907,26 +2034,28 @@ def _page() -> str:
       const recentlyTriggered = Date.now() < triggerLockUntil;
       syncBtn.disabled = isTriggering || running || recentlyTriggered || isConfigLoading;
       if (isTriggering) {
-        setButtonLoading(syncBtn, true, tr('button_starting'));
+        setButtonLoading(syncBtn, true, translate('button_starting'));
       } else if (isConfigLoading) {
-        setButtonLoading(syncBtn, true, tr('button_loading_config'));
+        setButtonLoading(syncBtn, true, translate('button_loading_config'));
       } else if (running) {
-        setButtonLoading(syncBtn, true, tr('button_running'));
+        setButtonLoading(syncBtn, true, translate('button_running'));
       } else if (recentlyTriggered) {
-        setButtonLoading(syncBtn, true, tr('button_waiting'));
+        setButtonLoading(syncBtn, true, translate('button_waiting'));
       } else {
-        setButtonLoading(syncBtn, false, tr('start'));
+        setButtonLoading(syncBtn, false, translate('start'));
       }
     }
 
     function scheduleNextRefresh(sync) {
-      if (timer) clearTimeout(timer);
+      if (timer) {
+        clearTimeout(timer);
+      }
       const running = sync.status === 'running' && (sync.updated_age_sec || 0) < 3600;
       const forcePolling = Date.now() < forcePollingUntil;
-        if (running || forcePolling) {
+      if (running || forcePolling) {
         timer = setTimeout(() => {
-          loadStatus().catch((err) => {
-            message.textContent = messageLabel(err.message);
+          loadStatus().catch((error) => {
+            message.textContent = messageLabel(error.message);
           });
         }, 60000);
       }
@@ -1935,43 +2064,43 @@ def _page() -> str:
     async function loadStatus() {
       if (isRefreshing) return;
       isRefreshing = true;
-      setButtonLoading(refreshBtn, true, tr('button_refreshing'));
+      setButtonLoading(refreshBtn, true, translate('button_refreshing'));
       try {
         const res = await fetch('/api/status', { credentials: 'include' });
-        if (!res.ok) throw new Error(tr('status_load_http', { status: res.status }));
+        if (!res.ok) throw new Error(translate('status_load_http', { status: res.status }));
         const data = await res.json();
         const sync = data.sync || {};
         lastSync = sync;
         const schedule = data.schedule || {};
         const budget = data.budget || {};
-        const pct = Number(sync.progress_percent || 0);
+        const progressPercent = Number(sync.progress_percent || 0);
 
         statusText.textContent = statusLabel(sync.status);
         statusDot.className = `dot ${sync.status || ''}`;
         message.textContent = messageLabel(sync.message);
         renderAttention(sync);
-        progressText.textContent = `${pct.toFixed(2)}%`;
-        progressBar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+        progressText.textContent = `${progressPercent.toFixed(2)}%`;
+        progressBar.style.width = `${Math.max(0, Math.min(100, progressPercent))}%`;
         recordsText.textContent = renderProgressDetails(sync);
-        etaText.textContent = fmt(sync.eta_finish_iso);
-        updatedText.textContent = tr('updated_at', {
-          date: fmt(sync.updated_at_iso),
+        etaText.textContent = formatDateTime(sync.eta_finish_iso);
+        updatedText.textContent = translate('updated_at', {
+          date: formatDateTime(sync.updated_at_iso),
           seconds: sync.updated_age_sec || 0
         });
-        nextRunText.textContent = fmt(schedule.next_run_iso);
+        nextRunText.textContent = formatDateTime(schedule.next_run_iso);
         scheduleText.textContent = schedule.state === 'ENABLED'
-          ? tr('schedule_enabled')
-          : tr('schedule_disabled');
+          ? translate('schedule_enabled')
+          : translate('schedule_disabled');
         renderBudget(budget);
         renderSteps(sync.steps, sync.summary_lines);
         renderCounters(sync);
-        runText.textContent = sync.run_id ? tr('run_id', { id: sync.run_id }) : '';
+        runText.textContent = sync.run_id ? translate('run_id', { id: sync.run_id }) : '';
         updateSyncButton(sync);
 
         scheduleNextRefresh(sync);
       } finally {
         isRefreshing = false;
-        setButtonLoading(refreshBtn, false, tr('refresh'));
+        setButtonLoading(refreshBtn, false, translate('refresh'));
       }
     }
 
@@ -1979,7 +2108,7 @@ def _page() -> str:
       if (isTriggering || syncBtn.disabled) return;
       isTriggering = true;
       syncBtn.disabled = true;
-      setButtonLoading(syncBtn, true, tr('button_starting'));
+      setButtonLoading(syncBtn, true, translate('button_starting'));
       try {
         const res = await fetch('/api/sync', {
           method: 'POST',
@@ -1989,40 +2118,40 @@ def _page() -> str:
         });
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(messageLabel(data.message) || tr('sync_start_http', { status: res.status }));
+          throw new Error(messageLabel(data.message) || translate('sync_start_http', { status: res.status }));
         }
-        configNote.innerHTML = tr('config_saved');
+        configNote.innerHTML = translate('config_saved');
         triggerLockUntil = Date.now() + 30000;
         forcePollingUntil = Date.now() + 15 * 60 * 1000;
         renderQueuedStart();
         setTimeout(() => {
-          loadStatus().catch((err) => {
-            message.textContent = messageLabel(err.message);
+          loadStatus().catch((error) => {
+            message.textContent = messageLabel(error.message);
           });
         }, 3000);
-      } catch (err) {
-        alert(messageLabel(err.message));
+      } catch (error) {
+        alert(messageLabel(error.message));
       } finally {
         isTriggering = false;
         updateSyncButton(lastSync);
       }
     }
 
-    refreshBtn.addEventListener('click', () => loadStatus().catch((err) => {
-      message.textContent = messageLabel(err.message);
+    refreshBtn.addEventListener('click', () => loadStatus().catch((error) => {
+      message.textContent = messageLabel(error.message);
       isRefreshing = false;
-      setButtonLoading(refreshBtn, false, tr('refresh'));
+      setButtonLoading(refreshBtn, false, translate('refresh'));
     }));
     inventorySelect.addEventListener('change', () => refreshWarehouseOptions());
     syncBtn.addEventListener('click', triggerSync);
-    loadConfig().catch((err) => {
-      configNote.textContent = messageLabel(err.message);
+    loadConfig().catch((error) => {
+      configNote.textContent = messageLabel(error.message);
     });
-    loadStatus().catch((err) => {
-      statusText.textContent = tr('status_error');
-      message.textContent = messageLabel(err.message);
+    loadStatus().catch((error) => {
+      statusText.textContent = translate('status_error');
+      message.textContent = messageLabel(error.message);
       isRefreshing = false;
-      setButtonLoading(refreshBtn, false, tr('refresh'));
+      setButtonLoading(refreshBtn, false, translate('refresh'));
     });
   </script>
 </body>

@@ -18,122 +18,154 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+from context_values import get_context_bool, get_context_int, get_context_text
+
 
 class ComarchBaseLinkerPipelineStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        def ctx(name: str, default: Optional[str] = None, required: bool = False) -> str:
-            value = self.node.try_get_context(name)
-            if value is None or str(value).strip() == "":
-                value = default
-            if required and (value is None or str(value).strip() == ""):
-                raise ValueError(f"Missing required CDK context: {name}")
-            return str(value) if value is not None else ""
+        def context_text(
+            name: str,
+            default: Optional[str] = None,
+            required: bool = False,
+        ) -> str:
+            return get_context_text(
+                self.node,
+                name,
+                default,
+                required,
+            )
 
-        def ctx_bool(name: str, default: bool) -> bool:
-            raw = self.node.try_get_context(name)
-            if raw is None:
-                return default
-            return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+        def context_bool(name: str, default: bool) -> bool:
+            return get_context_bool(self.node, name, default)
 
-        def ctx_int(name: str, default: int) -> int:
-            raw = self.node.try_get_context(name)
-            if raw is None or str(raw).strip() == "":
-                return int(default)
-            return int(str(raw).strip())
+        def context_int(name: str, default: int) -> int:
+            return get_context_int(self.node, name, default)
 
-        comarch_url = ctx("comarchUrl", required=True)
-        bucket_name = ctx("bucketName", required=True)
-        output_key = ctx("outputKey", "feeds/baselinker/products.xml")
-        function_name = ctx("functionName", "comarch-baselinker-sync")
-        continuation_queue_name = ctx("continuationQueueName", "")
+        # Deployment identity and user-facing branding.
+        comarch_url = context_text("comarchUrl", required=True)
+        bucket_name = context_text("bucketName", required=True)
+        output_key = context_text("outputKey", "feeds/baselinker/products.xml")
+        function_name = context_text("functionName", "comarch-baselinker-sync")
+        continuation_queue_name = context_text("continuationQueueName", "")
         lambda_function_arn = (
             f"arn:aws:lambda:{self.region}:{self.account}:function:{function_name}"
         )
-        schedule_name = ctx("scheduleName", "comarch-baselinker-sync-midnight")
-        schedule_expression = ctx("scheduleExpression", "cron(0 0 * * ? *)")
-        schedule_timezone = ctx("scheduleTimezone", "Europe/Warsaw")
-        admin_api_name = ctx("adminApiName", "comarch-baselinker-sync-admin-api")
-        admin_function_name = ctx("adminFunctionName", "comarch-baselinker-sync-admin")
-        admin_username = ctx("adminUsername", "admin")
-        admin_password_hash = ctx("adminPasswordHash", required=True)
-        brand_name = ctx("brandName", "Comarch → BaseLinker Sync")
-        brand_panel_title = ctx("brandPanelTitle", "Product synchronization")
-        brand_panel_subtitle = ctx(
+        schedule_name = context_text("scheduleName", "comarch-baselinker-sync-midnight")
+        schedule_expression = context_text("scheduleExpression", "cron(0 0 * * ? *)")
+        schedule_timezone = context_text("scheduleTimezone", "Europe/Warsaw")
+        admin_api_name = context_text("adminApiName", "comarch-baselinker-sync-admin-api")
+        admin_function_name = context_text(
+            "adminFunctionName",
+            "comarch-baselinker-sync-admin",
+        )
+        admin_username = context_text("adminUsername", "admin")
+        admin_password_hash = context_text("adminPasswordHash", required=True)
+        brand_name = context_text("brandName", "Comarch → BaseLinker Sync")
+        brand_panel_title = context_text("brandPanelTitle", "Product synchronization")
+        brand_panel_subtitle = context_text(
             "brandPanelSubtitle",
             "Status and manual product synchronization",
         )
-        brand_locale = ctx("brandLocale", "en").strip().lower()
+        brand_locale = context_text("brandLocale", "en").strip().lower()
         if brand_locale not in {"en", "pl"}:
             raise ValueError("brandLocale must be 'en' or 'pl'.")
-        brand_primary_color = ctx("brandPrimaryColor", "#1673b8")
-        brand_primary_dark_color = ctx("brandPrimaryDarkColor", "#0f5d96")
-        brand_secondary_color = ctx("brandSecondaryColor", "#183c5c")
-        brand_logo_enabled = ctx_bool("brandLogoEnabled", False)
-        budget_name = ctx("budgetName", "comarch-baselinker-sync-monthly-budget")
-        budget_limit_usd = ctx("budgetLimitUsd", "30")
-        budget_usd_to_pln_rate = ctx("budgetUsdToPlnRate", "4.00")
-        budget_fx_rate_ssm_param = ctx("budgetFxRateSsmParam", "/comarch-baselinker-sync/usd-pln-rate")
-        budget_guard_function_name = ctx("budgetGuardFunctionName", "comarch-baselinker-budget-guard")
-        budget_guard_monthly_schedule_name = ctx(
+        brand_primary_color = context_text("brandPrimaryColor", "#1673b8")
+        brand_primary_dark_color = context_text("brandPrimaryDarkColor", "#0f5d96")
+        brand_secondary_color = context_text("brandSecondaryColor", "#183c5c")
+        brand_logo_enabled = context_bool("brandLogoEnabled", False)
+        budget_name = context_text("budgetName", "comarch-baselinker-sync-monthly-budget")
+        budget_limit_usd = context_text("budgetLimitUsd", "30")
+        budget_usd_to_pln_rate = context_text("budgetUsdToPlnRate", "4.00")
+        budget_fx_rate_ssm_param = context_text(
+            "budgetFxRateSsmParam",
+            "/comarch-baselinker-sync/usd-pln-rate",
+        )
+        budget_guard_function_name = context_text(
+            "budgetGuardFunctionName",
+            "comarch-baselinker-budget-guard",
+        )
+        budget_guard_monthly_schedule_name = context_text(
             "budgetGuardMonthlyScheduleName",
             "comarch-baselinker-budget-guard-monthly-enable",
         )
-        budget_guard_hourly_schedule_name = ctx(
+        budget_guard_hourly_schedule_name = context_text(
             "budgetGuardHourlyScheduleName",
             "comarch-baselinker-budget-guard-hourly-check",
         )
-        budget_guard_status_ssm_param = ctx(
+        budget_guard_status_ssm_param = context_text(
             "budgetGuardStatusSsmParam",
             "/comarch-baselinker-sync/budget-guard-status",
         )
-        bl_api_token_ssm_param = ctx(
+        bl_api_token_ssm_param = context_text(
             "blApiTokenSsmParam",
             "/comarch-baselinker-sync/api-token",
         )
 
-        include_orphans = ctx_bool("includeOrphansAsProducts", False)
-        make_public_feed = ctx_bool("makePublicFeed", False)
+        # Runtime tuning and BaseLinker target configuration.
+        include_orphans = context_bool("includeOrphansAsProducts", False)
+        make_public_feed = context_bool("makePublicFeed", False)
 
-        request_timeout_sec = ctx_int("requestTimeoutSec", 180)
-        lambda_timeout_sec = ctx_int("lambdaTimeoutSec", 900)
-        lambda_memory_mb = ctx_int("lambdaMemoryMb", 1280)
+        request_timeout_sec = context_int("requestTimeoutSec", 180)
+        lambda_timeout_sec = context_int("lambdaTimeoutSec", 900)
+        lambda_memory_mb = context_int("lambdaMemoryMb", 1280)
 
-        bl_inventory_id = ctx("blInventoryId", required=True)
-        bl_warehouse_id = ctx("blWarehouseId", required=True)
-        bl_api_timeout_sec = ctx_int("blApiTimeoutSec", 60)
-        bl_api_max_rpm = ctx_int("blApiMaxRpm", 90)
-        bl_max_upserts_per_run = ctx_int("blMaxUpsertsPerRun", 200)
-        bl_max_records_per_run = ctx_int("blMaxRecordsPerRun", 600)
-        bl_enable_self_chain = ctx_bool("blEnableSelfChain", True)
-        bl_progress_update_every = ctx_int("blProgressUpdateEvery", 50)
-        bl_min_remaining_ms_for_continue = ctx_int("blMinRemainingMsForContinue", 180000)
-        bl_remote_cache_ttl_sec = ctx_int("blRemoteCacheTtlSec", 21600)
-        bl_bulk_update_enabled = ctx_bool("blBulkUpdateEnabled", True)
-        bl_bulk_update_max_items = ctx_int("blBulkUpdateMaxItems", 1000)
-        bl_bulk_update_min_items = ctx_int("blBulkUpdateMinItems", 5)
-        bl_eta_moving_avg_enabled = ctx_bool("blEtaMovingAvgEnabled", True)
-        bl_eta_ma_alpha = ctx("blEtaMaAlpha", "0.30")
-        bl_eta_ma_min_rpm = ctx_int("blEtaMaMinRpm", 1)
-        bl_eta_ma_bootstrap_sec = ctx_int("blEtaMaBootstrapSec", 45)
-        bl_full_audit_enabled = ctx_bool("blFullAuditEnabled", True)
-        bl_full_audit_details_limit_per_type = ctx_int("blFullAuditDetailsLimitPerType", 20)
-        bl_full_audit_max_details_rows = ctx_int("blFullAuditMaxDetailsRows", 3000)
-        bl_reset_state_if_status_stale_enabled = ctx_bool(
+        bl_inventory_id = context_text("blInventoryId", required=True)
+        bl_warehouse_id = context_text("blWarehouseId", required=True)
+        bl_api_timeout_sec = context_int("blApiTimeoutSec", 60)
+        bl_api_max_rpm = context_int("blApiMaxRpm", 90)
+        bl_max_upserts_per_run = context_int("blMaxUpsertsPerRun", 200)
+        bl_max_records_per_run = context_int("blMaxRecordsPerRun", 600)
+        bl_enable_self_chain = context_bool("blEnableSelfChain", True)
+        bl_progress_update_every = context_int("blProgressUpdateEvery", 50)
+        bl_min_remaining_ms_for_continue = context_int(
+            "blMinRemainingMsForContinue",
+            180000,
+        )
+        bl_remote_cache_ttl_sec = context_int("blRemoteCacheTtlSec", 21600)
+        bl_bulk_update_enabled = context_bool("blBulkUpdateEnabled", True)
+        bl_bulk_update_max_items = context_int("blBulkUpdateMaxItems", 1000)
+        bl_bulk_update_min_items = context_int("blBulkUpdateMinItems", 5)
+        bl_eta_moving_avg_enabled = context_bool("blEtaMovingAvgEnabled", True)
+        bl_eta_ma_alpha = context_text("blEtaMaAlpha", "0.30")
+        bl_eta_ma_min_rpm = context_int("blEtaMaMinRpm", 1)
+        bl_eta_ma_bootstrap_sec = context_int("blEtaMaBootstrapSec", 45)
+        bl_full_audit_enabled = context_bool("blFullAuditEnabled", True)
+        bl_full_audit_details_limit_per_type = context_int(
+            "blFullAuditDetailsLimitPerType",
+            20,
+        )
+        bl_full_audit_max_details_rows = context_int(
+            "blFullAuditMaxDetailsRows",
+            3000,
+        )
+        bl_reset_state_if_status_stale_enabled = context_bool(
             "blResetStateIfStatusStaleEnabled", True
         )
-        bl_reset_state_if_status_stale_sec = ctx_int("blResetStateIfStatusStaleSec", 3600)
-        bl_sync_status_ssm_param = ctx("blSyncStatusSsmParam", "/comarch-baselinker-sync/push-sync-status")
-        bl_sync_config_ssm_param = ctx("blSyncConfigSsmParam", "/comarch-baselinker-sync/sync-config")
-        bl_continuation_blocked_min_delay_sec = ctx_int(
+        bl_reset_state_if_status_stale_sec = context_int(
+            "blResetStateIfStatusStaleSec",
+            3600,
+        )
+        bl_sync_status_ssm_param = context_text(
+            "blSyncStatusSsmParam",
+            "/comarch-baselinker-sync/push-sync-status",
+        )
+        bl_sync_config_ssm_param = context_text(
+            "blSyncConfigSsmParam",
+            "/comarch-baselinker-sync/sync-config",
+        )
+        bl_continuation_blocked_min_delay_sec = context_int(
             "blContinuationBlockedMinDelaySec", 65
         )
-        bl_blocked_token_max_inline_wait_sec = ctx_int(
+        bl_blocked_token_max_inline_wait_sec = context_int(
             "blBlockedTokenMaxInlineWaitSec", 70
         )
 
-        reserved_concurrency_raw = ctx("reservedConcurrency", "1").strip().lower()
+        reserved_concurrency_raw = context_text(
+            "reservedConcurrency",
+            "1",
+        ).strip().lower()
         if reserved_concurrency_raw in {"", "none", "unreserved"}:
             reserved_concurrency = None
         else:
@@ -209,7 +241,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             "BL_BLOCKED_TOKEN_MAX_INLINE_WAIT_SEC": str(bl_blocked_token_max_inline_wait_sec),
         }
 
-        fn = lambda_.Function(
+        sync_function = lambda_.Function(
             self,
             "ComarchToBlLambda",
             function_name=function_name,
@@ -222,7 +254,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             environment=lambda_env,
         )
 
-        bucket.grant_read_write(fn)
+        bucket.grant_read_write(sync_function)
 
         param_resource_path = bl_sync_status_ssm_param.lstrip("/")
         param_arn = f"arn:aws:ssm:{self.region}:{self.account}:parameter/{param_resource_path}"
@@ -234,21 +266,21 @@ class ComarchBaseLinkerPipelineStack(Stack):
         budget_fx_param_arn = (
             f"arn:aws:ssm:{self.region}:{self.account}:parameter/{budget_fx_param_resource_path}"
         )
-        fn.add_to_role_policy(
+        sync_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:GetParameter", "ssm:PutParameter"],
                 resources=[param_arn],
             )
         )
-        fn.add_to_role_policy(
+        sync_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:GetParameter"],
                 resources=[config_param_arn],
             )
         )
-        fn.add_to_role_policy(
+        sync_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:PutParameter"],
@@ -259,14 +291,14 @@ class ComarchBaseLinkerPipelineStack(Stack):
         token_param_arn = (
             f"arn:aws:ssm:{self.region}:{self.account}:parameter/{token_param_resource_path}"
         )
-        fn.add_to_role_policy(
+        sync_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:GetParameter"],
                 resources=[token_param_arn],
             )
         )
-        fn.add_to_role_policy(
+        sync_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
@@ -285,10 +317,13 @@ class ComarchBaseLinkerPipelineStack(Stack):
             "ContinuationQueue",
             **queue_kwargs,
         )
-        continuation_queue.grant_send_messages(fn)
-        continuation_queue.grant_consume_messages(fn)
-        fn.add_environment("BL_CONTINUATION_SQS_URL", continuation_queue.queue_url)
-        fn.add_event_source(
+        continuation_queue.grant_send_messages(sync_function)
+        continuation_queue.grant_consume_messages(sync_function)
+        sync_function.add_environment(
+            "BL_CONTINUATION_SQS_URL",
+            continuation_queue.queue_url,
+        )
+        sync_function.add_event_source(
             lambda_event_sources.SqsEventSource(
                 continuation_queue,
                 batch_size=1,
@@ -297,7 +332,9 @@ class ComarchBaseLinkerPipelineStack(Stack):
             )
         )
 
-        budget_guard_fn = lambda_.Function(
+        # Budget guard disables all synchronization entry points when the
+        # monthly cost limit is reached and re-enables them next month.
+        budget_guard_function = lambda_.Function(
             self,
             "BudgetGuardLambda",
             function_name=budget_guard_function_name,
@@ -307,7 +344,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             timeout=Duration.seconds(60),
             memory_size=256,
             environment={
-                "SYNC_FUNCTION_NAME": fn.function_name,
+                "SYNC_FUNCTION_NAME": sync_function.function_name,
                 "SYNC_SCHEDULE_NAME": schedule_name,
                 "SYNC_SCHEDULE_GROUP": "default",
                 "CONTINUATION_QUEUE_ARN": continuation_queue.queue_arn,
@@ -326,14 +363,14 @@ class ComarchBaseLinkerPipelineStack(Stack):
         budget_guard_status_arn = (
             f"arn:aws:ssm:{self.region}:{self.account}:parameter/{budget_guard_status_resource_path}"
         )
-        budget_guard_fn.add_to_role_policy(
+        budget_guard_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:PutFunctionConcurrency"],
                 resources=[lambda_function_arn],
             )
         )
-        budget_guard_fn.add_to_role_policy(
+        budget_guard_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=[
@@ -343,7 +380,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 resources=["*"],
             )
         )
-        budget_guard_fn.add_to_role_policy(
+        budget_guard_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["scheduler:GetSchedule", "scheduler:UpdateSchedule"],
@@ -352,14 +389,14 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 ],
             )
         )
-        budget_guard_fn.add_to_role_policy(
+        budget_guard_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:PutParameter"],
                 resources=[budget_guard_status_arn],
             )
         )
-        budget_guard_fn.add_to_role_policy(
+        budget_guard_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["budgets:DescribeBudget", "budgets:ViewBudget"],
@@ -411,7 +448,10 @@ class ComarchBaseLinkerPipelineStack(Stack):
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
-                resources=[budget_guard_fn.function_arn, f"{budget_guard_fn.function_arn}:*"],
+                resources=[
+                    budget_guard_function.function_arn,
+                    f"{budget_guard_function.function_arn}:*",
+                ],
             )
         )
         scheduler.CfnSchedule(
@@ -424,7 +464,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             schedule_expression_timezone="Europe/Warsaw",
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
             target=scheduler.CfnSchedule.TargetProperty(
-                arn=budget_guard_fn.function_arn,
+                arn=budget_guard_function.function_arn,
                 role_arn=budget_guard_scheduler_role.role_arn,
                 input='{"action":"enable","reason":"monthly_budget_reset"}',
                 retry_policy=scheduler.CfnSchedule.RetryPolicyProperty(
@@ -443,7 +483,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             schedule_expression_timezone="Europe/Warsaw",
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
             target=scheduler.CfnSchedule.TargetProperty(
-                arn=budget_guard_fn.function_arn,
+                arn=budget_guard_function.function_arn,
                 role_arn=budget_guard_scheduler_role.role_arn,
                 input='{"action":"check","reason":"hourly_budget_check"}',
                 retry_policy=scheduler.CfnSchedule.RetryPolicyProperty(
@@ -453,7 +493,9 @@ class ComarchBaseLinkerPipelineStack(Stack):
             ),
         )
 
-        admin_fn = lambda_.Function(
+        # The administration Lambda serves both the password-protected page
+        # and its small JSON API through one API Gateway integration.
+        admin_function = lambda_.Function(
             self,
             "SyncAdminLambda",
             function_name=admin_function_name,
@@ -465,7 +507,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             environment={
                 "SYNC_STATUS_PARAM": bl_sync_status_ssm_param,
                 "SYNC_CONFIG_PARAM": bl_sync_config_ssm_param,
-                "SYNC_FUNCTION_NAME": fn.function_name,
+                "SYNC_FUNCTION_NAME": sync_function.function_name,
                 "DEFAULT_COMARCH_XML_URL": comarch_url,
                 "DEFAULT_BL_INVENTORY_ID": bl_inventory_id,
                 "DEFAULT_BL_WAREHOUSE_ID": bl_warehouse_id,
@@ -490,42 +532,42 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 "SCHEDULE_GROUP": "default",
             },
         )
-        admin_fn.add_to_role_policy(
+        admin_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:GetParameter"],
                 resources=[param_arn],
             )
         )
-        admin_fn.add_to_role_policy(
+        admin_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:GetParameter", "ssm:PutParameter"],
                 resources=[config_param_arn],
             )
         )
-        admin_fn.add_to_role_policy(
+        admin_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:GetParameter"],
                 resources=[token_param_arn],
             )
         )
-        admin_fn.add_to_role_policy(
+        admin_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["ssm:GetParameter"],
                 resources=[budget_fx_param_arn],
             )
         )
-        admin_fn.add_to_role_policy(
+        admin_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[lambda_function_arn, f"{lambda_function_arn}:*"],
             )
         )
-        admin_fn.add_to_role_policy(
+        admin_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["scheduler:GetSchedule"],
@@ -534,7 +576,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 ],
             )
         )
-        admin_fn.add_to_role_policy(
+        admin_function.add_to_role_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["budgets:DescribeBudget", "budgets:ViewBudget"],
@@ -549,7 +591,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
         )
         admin_integration = apigwv2_integrations.HttpLambdaIntegration(
             "SyncAdminIntegration",
-            admin_fn,
+            admin_function,
         )
         admin_api.add_routes(
             path="/",
@@ -590,7 +632,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
         CfnOutput(self, "BucketName", value=bucket.bucket_name)
         CfnOutput(self, "FeedObjectKey", value=output_key)
         CfnOutput(self, "FeedUrl", value=f"https://{bucket.bucket_name}.s3.{self.region}.amazonaws.com/{output_key}")
-        CfnOutput(self, "LambdaName", value=fn.function_name)
+        CfnOutput(self, "LambdaName", value=sync_function.function_name)
         CfnOutput(
             self,
             "LambdaReservedConcurrency",
@@ -604,5 +646,9 @@ class ComarchBaseLinkerPipelineStack(Stack):
         CfnOutput(self, "ContinuationQueueArn", value=continuation_queue.queue_arn)
         CfnOutput(self, "ScheduleName", value=schedule_name)
         CfnOutput(self, "BudgetName", value=budget_name)
-        CfnOutput(self, "BudgetGuardLambdaName", value=budget_guard_fn.function_name)
+        CfnOutput(
+            self,
+            "BudgetGuardLambdaName",
+            value=budget_guard_function.function_name,
+        )
         CfnOutput(self, "AdminUrl", value=admin_api.url or "")

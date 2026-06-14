@@ -65,6 +65,7 @@ _BL_API_RATE_LIMITER = {
 POLAND_TZ = ZoneInfo("Europe/Warsaw")
 AUDIT_PRICE_TOL = 0.01
 AUDIT_NUM_TOL = 0.0001
+ProductRecord = Dict[str, Any]
 
 
 def _clean(value):
@@ -84,8 +85,8 @@ def _pick_text(elem: ET.Element, paths: List[str]) -> str:
     return ""
 
 
-def _normalize_parent_id(raw: str) -> str:
-    value = _clean(raw)
+def _normalize_parent_id(raw_parent_id: str) -> str:
+    value = _clean(raw_parent_id)
     if value in {"", "0", "-1"}:
         return ""
     if value.lower() in {"null", "none"}:
@@ -93,8 +94,8 @@ def _normalize_parent_id(raw: str) -> str:
     return value
 
 
-def _parse_int(raw: str, default: int = 0) -> int:
-    value = _clean(raw).replace(",", ".")
+def _parse_int(raw_value: str, default: int = 0) -> int:
+    value = _clean(raw_value).replace(",", ".")
     if value == "":
         return default
     try:
@@ -103,15 +104,15 @@ def _parse_int(raw: str, default: int = 0) -> int:
         return default
 
 
-def _normalize_decimal(raw: str, default: str = "0") -> str:
-    value = _clean(raw).replace(",", ".")
+def _normalize_decimal(raw_value: str, default: str = "0") -> str:
+    value = _clean(raw_value).replace(",", ".")
     if value == "":
         return default
     return value
 
 
-def _normalize_tax_rate(raw: str) -> str:
-    value = _clean(raw).replace(",", ".")
+def _normalize_tax_rate(raw_tax_rate: str) -> str:
+    value = _clean(raw_tax_rate).replace(",", ".")
     if value == "":
         return ""
     if value.endswith("%"):
@@ -122,148 +123,197 @@ def _normalize_tax_rate(raw: str) -> str:
 
 
 def _unique_nonempty(values: List[str]) -> List[str]:
-    out = []
-    seen = set()
-    for v in values:
-        if not v:
+    unique_values: List[str] = []
+    seen_values: Set[str] = set()
+
+    for value in values:
+        if not value:
             continue
-        if v in seen:
+        if value in seen_values:
             continue
-        seen.add(v)
-        out.append(v)
-    return out
+        seen_values.add(value)
+        unique_values.append(value)
+
+    return unique_values
 
 
-def _collect_images(src: ET.Element) -> List[str]:
-    candidates = []
+def _collect_images(product_element: ET.Element) -> List[str]:
+    image_candidates: List[str] = []
 
     for tag in ["image", "main_image", "image_url"]:
-        value = _pick_text(src, [tag])
-        if value:
-            candidates.append(value)
+        image_url = _pick_text(product_element, [tag])
+        if image_url != "":
+            image_candidates.append(image_url)
 
-    for idx in range(1, 16):
-        value = _pick_text(src, [f"image_extra_{idx}"])
-        if value:
-            candidates.append(value)
+    for image_index in range(1, 16):
+        image_url = _pick_text(product_element, [f"image_extra_{image_index}"])
+        if image_url != "":
+            image_candidates.append(image_url)
 
-    for node in src.findall("images/image"):
-        value = _clean(node.text)
-        if value:
-            candidates.append(value)
+    for image_element in product_element.findall("images/image"):
+        image_url = _clean(image_element.text)
+        if image_url != "":
+            image_candidates.append(image_url)
 
-    return _unique_nonempty(candidates)
+    # BaseLinker should receive each image once even if Comarch exposes the
+    # same URL through the main image and the extra-images collection.
+    return _unique_nonempty(image_candidates)
 
 
-def _collect_attributes(src: ET.Element) -> List[Tuple[str, str]]:
-    out: List[Tuple[str, str]] = []
-    for attr in src.findall("attributes/attribute"):
-        name = _pick_text(attr, ["attribute_name", "name"])
-        value = _pick_text(attr, ["attribute_value", "value"])
-        if name == "" and value == "":
+def _collect_attributes(product_element: ET.Element) -> List[Tuple[str, str]]:
+    attributes: List[Tuple[str, str]] = []
+
+    for attribute_element in product_element.findall("attributes/attribute"):
+        attribute_name = _pick_text(attribute_element, ["attribute_name", "name"])
+        attribute_value = _pick_text(attribute_element, ["attribute_value", "value"])
+        if attribute_name == "" and attribute_value == "":
             continue
-        out.append((name, value))
-    return out
+        attributes.append((attribute_name, attribute_value))
+
+    return attributes
 
 
-def _parse_records(root: ET.Element) -> List[Dict]:
-    records = []
+def _parse_records(root: ET.Element) -> List[ProductRecord]:
+    product_records: List[ProductRecord] = []
 
-    for node in list(root):
-        if node.tag.lower() not in {"item", "product"}:
+    for product_element in list(root):
+        if product_element.tag.lower() not in {"item", "product"}:
             continue
 
-        product_id = _pick_text(node, ["id", "product_id"])
-        if not product_id:
+        product_id = _pick_text(product_element, ["id", "product_id"])
+        if product_id == "":
             continue
 
         parent_id = _normalize_parent_id(
-            _pick_text(node, ["parent_id", "parentId", "ParentId"])
+            _pick_text(product_element, ["parent_id", "parentId", "ParentId"])
         )
 
-        record = {
+        product_record: ProductRecord = {
             "id": product_id,
             "parent_id": parent_id,
-            "name": _pick_text(node, ["name"]),
-            "sku": _pick_text(node, ["sku", "code"]),
-            "ean": _pick_text(node, ["ean", "upc"]),
-            "quantity": _parse_int(_pick_text(node, ["quantity", "stock_quantity"]), 0),
-            "price": _normalize_decimal(_pick_text(node, ["price", "price_gross"]), "0"),
-            "purchase_price": _normalize_decimal(_pick_text(node, ["purchase_price"]), ""),
-            "tax_rate": _normalize_tax_rate(_pick_text(node, ["tax_rate"])),
-            "weight": _normalize_decimal(_pick_text(node, ["weight"]), "0"),
-            "width": _normalize_decimal(_pick_text(node, ["width"]), "0"),
-            "height": _normalize_decimal(_pick_text(node, ["height"]), "0"),
-            "length": _normalize_decimal(_pick_text(node, ["length"]), "0"),
-            "description": _pick_text(node, ["description"]),
-            "description_extra_1": _pick_text(node, ["description_extra_1"]),
-            "description_extra_2": _pick_text(node, ["description_extra_2"]),
-            "category_name": _pick_text(node, ["category_name", "category_path"]),
-            "manufacturer_name": _pick_text(node, ["manufacturer_name", "brand"]),
-            "images": _collect_images(node),
-            "attributes": _collect_attributes(node),
+            "name": _pick_text(product_element, ["name"]),
+            "sku": _pick_text(product_element, ["sku", "code"]),
+            "ean": _pick_text(product_element, ["ean", "upc"]),
+            "quantity": _parse_int(
+                _pick_text(product_element, ["quantity", "stock_quantity"]),
+                0,
+            ),
+            "price": _normalize_decimal(
+                _pick_text(product_element, ["price", "price_gross"]),
+                "0",
+            ),
+            "purchase_price": _normalize_decimal(
+                _pick_text(product_element, ["purchase_price"]),
+                "",
+            ),
+            "tax_rate": _normalize_tax_rate(
+                _pick_text(product_element, ["tax_rate"])
+            ),
+            "weight": _normalize_decimal(
+                _pick_text(product_element, ["weight"]),
+                "0",
+            ),
+            "width": _normalize_decimal(
+                _pick_text(product_element, ["width"]),
+                "0",
+            ),
+            "height": _normalize_decimal(
+                _pick_text(product_element, ["height"]),
+                "0",
+            ),
+            "length": _normalize_decimal(
+                _pick_text(product_element, ["length"]),
+                "0",
+            ),
+            "description": _pick_text(product_element, ["description"]),
+            "description_extra_1": _pick_text(
+                product_element,
+                ["description_extra_1"],
+            ),
+            "description_extra_2": _pick_text(
+                product_element,
+                ["description_extra_2"],
+            ),
+            "category_name": _pick_text(
+                product_element,
+                ["category_name", "category_path"],
+            ),
+            "manufacturer_name": _pick_text(
+                product_element,
+                ["manufacturer_name", "brand"],
+            ),
+            "images": _collect_images(product_element),
+            "attributes": _collect_attributes(product_element),
         }
-        records.append(record)
+        product_records.append(product_record)
 
-    return records
+    return product_records
 
 
 def _build_relationships(
-    records: List[Dict], include_orphans_as_products: bool
-) -> Tuple[List[Dict], Dict[str, List[Dict]], Dict[str, int]]:
-    ids = {r["id"] for r in records}
-    variants_by_parent: Dict[str, List[Dict]] = defaultdict(list)
+    records: List[ProductRecord],
+    include_orphans_as_products: bool,
+) -> Tuple[List[ProductRecord], Dict[str, List[ProductRecord]], Dict[str, int]]:
+    record_ids = {record["id"] for record in records}
+    variants_by_parent: Dict[str, List[ProductRecord]] = defaultdict(list)
 
     orphan_variants = 0
-    for r in records:
-        parent = r["parent_id"]
-        if parent == "":
+    for record in records:
+        parent_id = record["parent_id"]
+        if parent_id == "":
             continue
-        if parent in ids and parent != r["id"]:
-            variants_by_parent[parent].append(r)
+        has_valid_parent = parent_id in record_ids and parent_id != record["id"]
+        if has_valid_parent:
+            variants_by_parent[parent_id].append(record)
         else:
             orphan_variants += 1
 
-    base_records: List[Dict] = []
+    output_records: List[ProductRecord] = []
     output_variant_products = 0
     output_orphan_products = 0
     dropped_zero_qty_variant_products = 0
     dropped_zero_qty_orphan_products = 0
-    for r in records:
-        parent = r["parent_id"]
-        if parent == "":
-            # Parent products are allowed to keep quantity=0.
-            base_records.append(r)
+
+    for record in records:
+        parent_id = record["parent_id"]
+        quantity = int(record["quantity"])
+
+        if parent_id == "":
+            # A parent can have zero stock because sellable stock is stored on
+            # its variants. It must still be exported to preserve relations.
+            output_records.append(record)
             continue
-        is_valid_variant = parent in ids and parent != r["id"]
+
+        is_valid_variant = parent_id in record_ids and parent_id != record["id"]
         if is_valid_variant:
-            if int(r["quantity"]) <= 0:
+            if quantity <= 0:
                 dropped_zero_qty_variant_products += 1
                 continue
-            base_records.append(r)
+            output_records.append(record)
             output_variant_products += 1
             continue
+
         if include_orphans_as_products:
-            if int(r["quantity"]) <= 0:
+            if quantity <= 0:
                 dropped_zero_qty_orphan_products += 1
                 continue
-            base_records.append(r)
+            output_records.append(record)
             output_orphan_products += 1
 
     stats: Dict[str, int] = {
         "input_records": len(records),
-        "output_products": len(base_records),
+        "output_products": len(output_records),
         "output_variant_products": output_variant_products,
         "output_orphan_products": output_orphan_products,
         "orphan_variants": orphan_variants,
         "dropped_zero_qty_variant_products": dropped_zero_qty_variant_products,
         "dropped_zero_qty_orphan_products": dropped_zero_qty_orphan_products,
     }
-    return base_records, variants_by_parent, stats
+    return output_records, variants_by_parent, stats
 
 
 def _download(url: str, timeout_sec: int, retries: int = 3) -> bytes:
-    last_err = None
+    last_error: Optional[Exception] = None
     headers = {
         "User-Agent": "comarch-bl-pipeline/1.0",
         "Accept": "application/xml,text/xml,*/*",
@@ -271,49 +321,51 @@ def _download(url: str, timeout_sec: int, retries: int = 3) -> bytes:
 
     for attempt in range(1, retries + 1):
         try:
-            req = urllib.request.Request(url=url, headers=headers, method="GET")
-            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-                return resp.read()
+            request = urllib.request.Request(url=url, headers=headers, method="GET")
+            with urllib.request.urlopen(request, timeout=timeout_sec) as response:
+                return response.read()
         except Exception as exc:
-            last_err = exc
+            last_error = exc
             if attempt < retries:
                 time.sleep(2 ** (attempt - 1))
 
-    raise RuntimeError(f"Failed to download source feed after {retries} attempts: {last_err}")
+    raise RuntimeError(
+        f"Failed to download source feed after {retries} attempts: {last_error}"
+    )
 
 
 def _env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
+    raw_value = os.getenv(name)
+    if raw_value is None:
         return default
-    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return raw_value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None:
+    raw_value = os.getenv(name)
+    if raw_value is None:
         return default
     try:
-        return int(raw.strip())
+        return int(raw_value.strip())
     except Exception:
         return default
 
 
 def _env_float(name: str, default: float) -> float:
-    raw = os.getenv(name)
-    if raw is None:
+    raw_value = os.getenv(name)
+    if raw_value is None:
         return default
     try:
-        return float(raw.strip())
+        return float(raw_value.strip())
     except Exception:
         return default
 
 
 def _env_str(name: str, default: str = "") -> str:
-    raw = os.getenv(name)
-    if raw is None:
+    raw_value = os.getenv(name)
+    if raw_value is None:
         return default
-    return str(raw).strip()
+    return str(raw_value).strip()
 
 
 def _extract_blocked_token_until_unix(raw_error: str) -> int:
@@ -356,159 +408,202 @@ def _compute_blocked_token_resume_unix(
     return int(candidate_unix)
 
 
+def _json_size_bytes(payload: Dict[str, Any]) -> int:
+    serialized_payload = json.dumps(payload, ensure_ascii=False)
+    return len(serialized_payload.encode("utf-8"))
+
+
+def _compact_sync_status_section(status_section: Dict[str, Any]) -> Dict[str, Any]:
+    compact_section: Dict[str, Any] = {}
+    integer_fields = [
+        "global_total_records",
+        "global_processed",
+        "global_requested",
+        "global_updated",
+        "global_skipped_unchanged",
+        "global_errors_count",
+        "sync_cursor_index",
+        "errors_count",
+    ]
+    text_fields = [
+        "phase",
+        "sync_stage",
+        "eta_finish_iso",
+        "blocked_token_until_iso",
+        "continuation_not_before_iso",
+        "post_audit_skipped_reason",
+    ]
+
+    for field_name in integer_fields:
+        if field_name not in status_section:
+            continue
+        try:
+            compact_section[field_name] = int(
+                status_section.get(field_name, 0) or 0
+            )
+        except Exception:
+            continue
+
+    for field_name in text_fields:
+        field_value = _clean(status_section.get(field_name, ""))
+        if field_value != "":
+            compact_section[field_name] = field_value
+
+    for field_name in ("has_more_batches", "continuation_enqueued"):
+        if field_name in status_section:
+            compact_section[field_name] = bool(
+                status_section.get(field_name, False)
+            )
+
+    audit_integer_fields = [
+        "records_for_sync_total",
+        "bl_products_list_total",
+        "bl_products_details_total",
+        "matched_records",
+        "unchanged_records",
+        "changed_records",
+        "missing_in_bl",
+        "extra_in_bl",
+        "diff_total",
+        "details_rows_written",
+        "details_rows_truncated",
+        "duration_sec",
+    ]
+    for summary_field_name in ("pre_audit_summary", "post_audit_summary"):
+        audit_summary = status_section.get(summary_field_name)
+        if not isinstance(audit_summary, dict):
+            continue
+
+        compact_summary: Dict[str, Any] = {}
+        for field_name in audit_integer_fields:
+            if field_name not in audit_summary:
+                continue
+            try:
+                compact_summary[field_name] = int(
+                    audit_summary.get(field_name, 0) or 0
+                )
+            except Exception:
+                continue
+        if compact_summary:
+            compact_section[summary_field_name] = compact_summary
+
+    for field_name in (
+        "pre_audit_summary_key",
+        "post_audit_summary_key",
+        "pre_audit_error",
+        "post_audit_error",
+    ):
+        field_value = _clean(status_section.get(field_name, ""))
+        if field_value != "":
+            compact_section[field_name] = field_value[:512]
+
+    for field_name in (
+        "pre_audit_executed",
+        "sync_skipped_no_changes",
+        "post_audit_executed",
+        "post_audit_skipped_no_changes",
+    ):
+        if field_name in status_section:
+            compact_section[field_name] = bool(
+                status_section.get(field_name, False)
+            )
+
+    return compact_section
+
+
 def _safe_put_sync_status(ssm_param_name: str, payload: Dict[str, Any]) -> None:
-    name = _clean(ssm_param_name)
-    if name == "":
+    parameter_name = _clean(ssm_param_name)
+    if parameter_name == "":
         return
+
     # Standard SSM Parameter Store hard-limit is 4096 bytes.
     # Keep a guard margin to avoid edge overflows with unicode bytes.
     max_bytes = 3800
 
-    def _body_size_bytes(obj: Dict[str, Any]) -> int:
-        return len(json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+    compact_payload = copy.deepcopy(payload)
+    result_section = compact_payload.get("result")
+    if isinstance(result_section, dict):
+        compact_payload["result"] = _compact_sync_status_section(result_section)
+    progress_section = compact_payload.get("progress")
+    if isinstance(progress_section, dict):
+        compact_payload["progress"] = _compact_sync_status_section(
+            progress_section
+        )
+    serialized_payload = json.dumps(compact_payload, ensure_ascii=False)
 
-    def _compact_numbers(src: Dict[str, Any]) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        wanted_ints = [
-            "global_total_records",
-            "global_processed",
-            "global_requested",
-            "global_updated",
-            "global_skipped_unchanged",
-            "global_errors_count",
-            "sync_cursor_index",
-            "errors_count",
-        ]
-        wanted_text = [
-            "phase",
-            "sync_stage",
-            "eta_finish_iso",
-            "blocked_token_until_iso",
-            "continuation_not_before_iso",
-            "post_audit_skipped_reason",
-        ]
-        for key in wanted_ints:
-            if key in src:
-                try:
-                    out[key] = int(src.get(key, 0) or 0)
-                except Exception:
-                    continue
-        for key in wanted_text:
-            val = _clean(src.get(key, ""))
-            if val != "":
-                out[key] = val
-        if "has_more_batches" in src:
-            out["has_more_batches"] = bool(src.get("has_more_batches", False))
-        if "continuation_enqueued" in src:
-            out["continuation_enqueued"] = bool(src.get("continuation_enqueued", False))
-        audit_summary_ints = [
-            "records_for_sync_total",
-            "bl_products_list_total",
-            "bl_products_details_total",
-            "matched_records",
-            "unchanged_records",
-            "changed_records",
-            "missing_in_bl",
-            "extra_in_bl",
-            "diff_total",
-            "details_rows_written",
-            "details_rows_truncated",
-            "duration_sec",
-        ]
-        for summary_key in ("pre_audit_summary", "post_audit_summary"):
-            summary = src.get(summary_key)
-            if not isinstance(summary, dict):
-                continue
-            compact_summary: Dict[str, Any] = {}
-            for key in audit_summary_ints:
-                if key not in summary:
-                    continue
-                try:
-                    compact_summary[key] = int(summary.get(key, 0) or 0)
-                except Exception:
-                    continue
-            if compact_summary:
-                out[summary_key] = compact_summary
-        for key in (
-            "pre_audit_summary_key",
-            "post_audit_summary_key",
-            "pre_audit_error",
-            "post_audit_error",
-        ):
-            val = _clean(src.get(key, ""))
-            if val != "":
-                out[key] = val[:512]
-        for key in (
-            "pre_audit_executed",
-            "sync_skipped_no_changes",
-            "post_audit_executed",
-            "post_audit_skipped_no_changes",
-        ):
-            if key in src:
-                out[key] = bool(src.get(key, False))
-        return out
+    if _json_size_bytes(compact_payload) > max_bytes:
+        metadata_only_payload = copy.deepcopy(compact_payload)
+        metadata_only_payload.pop("result", None)
+        metadata_only_payload.pop("progress", None)
+        serialized_payload = json.dumps(metadata_only_payload, ensure_ascii=False)
 
-    compact = copy.deepcopy(payload)
-    result = compact.get("result")
-    if isinstance(result, dict):
-        compact["result"] = _compact_numbers(result)
-    progress = compact.get("progress")
-    if isinstance(progress, dict):
-        compact["progress"] = _compact_numbers(progress)
-    body = json.dumps(compact, ensure_ascii=False)
-
-    if _body_size_bytes(compact) > max_bytes:
-        compact2 = copy.deepcopy(compact)
-        compact2.pop("result", None)
-        compact2.pop("progress", None)
-        body = json.dumps(compact2, ensure_ascii=False)
-
-    if len(body.encode("utf-8")) > max_bytes:
-        fallback = {
+    if len(serialized_payload.encode("utf-8")) > max_bytes:
+        fallback_payload = {
             "status": _clean(payload.get("status", "")),
             "mode": _clean(payload.get("mode", "")),
             "run_id": _clean(payload.get("run_id", "")),
             "sync_chain_depth": int(payload.get("sync_chain_depth", 0) or 0),
-            "updated_at_unix": int(payload.get("updated_at_unix", int(time.time())) or int(time.time())),
-            "updated_at_iso": _clean(payload.get("updated_at_iso", datetime.now(timezone.utc).isoformat())),
+            "updated_at_unix": int(
+                payload.get("updated_at_unix", int(time.time()))
+                or int(time.time())
+            ),
+            "updated_at_iso": _clean(
+                payload.get(
+                    "updated_at_iso",
+                    datetime.now(timezone.utc).isoformat(),
+                )
+            ),
             "message": _clean(payload.get("message", ""))[:512],
             "truncated_for_ssm": True,
         }
-        # Preserve high-value progress counters in the fallback.
-        progress_src = payload.get("progress")
-        if isinstance(progress_src, dict):
-            fallback.update(_compact_numbers(progress_src))
-        result_src = payload.get("result")
-        if isinstance(result_src, dict):
-            for key, val in _compact_numbers(result_src).items():
-                if key not in fallback:
-                    fallback[key] = val
-        body = json.dumps(fallback, ensure_ascii=False)
+        # Preserve the counters needed by the admin panel even when the full
+        # status no longer fits in a Standard SSM parameter.
+        original_progress = payload.get("progress")
+        if isinstance(original_progress, dict):
+            fallback_payload.update(
+                _compact_sync_status_section(original_progress)
+            )
+        original_result = payload.get("result")
+        if isinstance(original_result, dict):
+            compact_result = _compact_sync_status_section(original_result)
+            for field_name, field_value in compact_result.items():
+                if field_name not in fallback_payload:
+                    fallback_payload[field_name] = field_value
+        serialized_payload = json.dumps(fallback_payload, ensure_ascii=False)
+
     try:
         ssm.put_parameter(
-            Name=name,
-            Value=body,
+            Name=parameter_name,
+            Value=serialized_payload,
             Type="String",
             Overwrite=True,
             Tier="Standard",
         )
     except Exception as exc:
-        print(f"[sync-status] failed to write parameter '{name}': {exc}")
+        print(
+            f"[sync-status] failed to write parameter "
+            f"'{parameter_name}': {exc}"
+        )
 
 
 def _safe_get_sync_status(ssm_param_name: str) -> Dict[str, Any]:
-    name = _clean(ssm_param_name)
-    if name == "":
+    parameter_name = _clean(ssm_param_name)
+    if parameter_name == "":
         return {}
     try:
-        response = ssm.get_parameter(Name=name)
-        raw = _clean(response.get("Parameter", {}).get("Value", ""))
-        if raw == "":
+        response = ssm.get_parameter(Name=parameter_name)
+        parameter_value = _clean(response.get("Parameter", {}).get("Value", ""))
+        if parameter_value == "":
             return {}
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else {}
+        status_payload = json.loads(parameter_value)
+        if isinstance(status_payload, dict):
+            return status_payload
+        return {}
     except Exception as exc:
-        print(f"[sync-status] failed to read parameter '{name}': {exc}")
+        print(
+            f"[sync-status] failed to read parameter "
+            f"'{parameter_name}': {exc}"
+        )
         return {}
 
 
@@ -529,7 +624,7 @@ def _refresh_budget_fx_rate_ssm(
         "error": "",
     }
     try:
-        req = urllib.request.Request(
+        request = urllib.request.Request(
             _clean(nbp_url) or DEFAULT_NBP_USD_PLN_URL,
             headers={
                 "Accept": "application/json",
@@ -537,18 +632,24 @@ def _refresh_budget_fx_rate_ssm(
             },
             method="GET",
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        rates = data.get("rates", []) if isinstance(data, dict) else []
-        latest = rates[0] if rates and isinstance(rates[0], dict) else {}
-        rate = _to_float(str(latest.get("mid", "")), 0)
+        with urllib.request.urlopen(request, timeout=8) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+        rates = (
+            response_payload.get("rates", [])
+            if isinstance(response_payload, dict)
+            else []
+        )
+        latest_rate = rates[0] if rates and isinstance(rates[0], dict) else {}
+        rate = _to_float(str(latest_rate.get("mid", "")), 0)
         if rate <= 0:
             raise ValueError("NBP response does not contain a positive USD mid rate.")
         payload.update(
             {
                 "rate": round(float(rate), 4),
                 "source": "nbp",
-                "effective_date": _clean(latest.get("effectiveDate", "")),
+                "effective_date": _clean(
+                    latest_rate.get("effectiveDate", "")
+                ),
                 "error": "",
             }
         )
@@ -926,33 +1027,44 @@ def _bl_api_call(
         "User-Agent": "comarch-baselinker-sync/1.0",
     }
 
-    last_err = None
+    last_error: Optional[Exception] = None
     for attempt in range(1, retries + 1):
         try:
             _wait_for_bl_rate_limit_slot()
-            req = urllib.request.Request(api_url, data=payload, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-                body = resp.read()
-            data = json.loads(body.decode("utf-8"))
-            if not isinstance(data, dict):
+            request = urllib.request.Request(
+                api_url,
+                data=payload,
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=timeout_sec) as response:
+                response_body = response.read()
+            response_payload = json.loads(response_body.decode("utf-8"))
+            if not isinstance(response_payload, dict):
                 raise RuntimeError(f"{method}: malformed response")
-            if data.get("status") != "SUCCESS":
-                err_msg = data.get("error_message", "unknown error")
-                err_code = data.get("error_code", "")
-                raise RuntimeError(f"{method}: {err_msg} ({err_code})")
-            return data
+            if response_payload.get("status") != "SUCCESS":
+                error_message = response_payload.get("error_message", "unknown error")
+                error_code = response_payload.get("error_code", "")
+                raise RuntimeError(f"{method}: {error_message} ({error_code})")
+            return response_payload
         except Exception as exc:
-            last_err = exc
+            last_error = exc
             if attempt < retries:
                 time.sleep(2 ** (attempt - 1))
-    raise RuntimeError(f"BL API call failed for {method}: {last_err}")
+    raise RuntimeError(f"BL API call failed for {method}: {last_error}")
 
 
 def _split_category_path(path: str) -> List[str]:
-    raw = _clean(path)
-    if raw == "":
+    normalized_path = _clean(path)
+    if normalized_path == "":
         return []
-    return [p.strip() for p in re.split(r"\s*/\s*|\s*>\s*", raw) if p.strip()]
+
+    path_parts: List[str] = []
+    for path_part in re.split(r"\s*/\s*|\s*>\s*", normalized_path):
+        normalized_part = path_part.strip()
+        if normalized_part != "":
+            path_parts.append(normalized_part)
+    return path_parts
 
 
 def _stable_signature(record: Dict[str, Any], parent_source_id: str) -> str:

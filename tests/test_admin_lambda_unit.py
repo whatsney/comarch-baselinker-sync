@@ -159,5 +159,30 @@ class TestAdminBranding(unittest.TestCase):
         self.assertNotIn("display:none", page)
 
 
+class TestAdminBaseLinkerOptions(unittest.TestCase):
+    def test_normalize_warehouse_rows_accepts_dictionary_response(self):
+        warehouse_rows = admin._normalize_warehouse_rows(
+            {
+                "123": {"name": "Main warehouse"},
+                "456": "Outlet",
+            }
+        )
+
+        self.assertEqual(
+            warehouse_rows,
+            [
+                {"name": "Main warehouse", "warehouse_id": "123"},
+                {"warehouse_id": "456", "name": "Outlet"},
+            ],
+        )
+
+    def test_warehouse_ids_from_inventory_removes_empty_values(self):
+        warehouse_ids = admin._warehouse_ids_from_inventory(
+            {"warehouses": ["bl_123", "", None, "shop_456"]}
+        )
+
+        self.assertEqual(warehouse_ids, ["bl_123", "shop_456"])
+
+
 if __name__ == "__main__":
     unittest.main()

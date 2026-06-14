@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 from datetime import timezone
@@ -53,7 +54,116 @@ class _Ctx:
         return 600_000
 
 
+class TestProductFeedParsing(unittest.TestCase):
+    def test_parse_records_deduplicates_images_and_reads_attributes(self):
+        root = ET.fromstring(
+            """
+            <products>
+              <product>
+                <id>100</id>
+                <parent_id>0</parent_id>
+                <name>Example product</name>
+                <stock_quantity>2</stock_quantity>
+                <main_image>https://example.com/main.jpg</main_image>
+                <image_extra_1>https://example.com/main.jpg</image_extra_1>
+                <images>
+                  <image>https://example.com/extra.jpg</image>
+                </images>
+                <attributes>
+                  <attribute>
+                    <attribute_name>Kolor</attribute_name>
+                    <attribute_value>Czarny</attribute_value>
+                  </attribute>
+                </attributes>
+              </product>
+            </products>
+            """
+        )
+
+        records = lf._parse_records(root)
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["parent_id"], "")
+        self.assertEqual(records[0]["quantity"], 2)
+        self.assertEqual(
+            records[0]["images"],
+            [
+                "https://example.com/main.jpg",
+                "https://example.com/extra.jpg",
+            ],
+        )
+        self.assertEqual(records[0]["attributes"], [("Kolor", "Czarny")])
+
+    def test_build_relationships_keeps_parent_and_positive_stock_variant(self):
+        parent = {"id": "100", "parent_id": "", "quantity": 0}
+        available_variant = {"id": "101", "parent_id": "100", "quantity": 3}
+        unavailable_variant = {"id": "102", "parent_id": "100", "quantity": 0}
+        orphan = {"id": "103", "parent_id": "999", "quantity": 4}
+
+        output_records, variants_by_parent, stats = lf._build_relationships(
+            records=[
+                parent,
+                available_variant,
+                unavailable_variant,
+                orphan,
+            ],
+            include_orphans_as_products=False,
+        )
+
+        self.assertEqual(
+            [record["id"] for record in output_records],
+            ["100", "101"],
+        )
+        self.assertEqual(
+            [record["id"] for record in variants_by_parent["100"]],
+            ["101", "102"],
+        )
+        self.assertEqual(stats["orphan_variants"], 1)
+        self.assertEqual(stats["dropped_zero_qty_variant_products"], 1)
+        self.assertEqual(stats["output_orphan_products"], 0)
+
+    def test_build_relationships_can_include_positive_stock_orphan(self):
+        orphan = {"id": "103", "parent_id": "999", "quantity": 4}
+
+        output_records, _, stats = lf._build_relationships(
+            records=[orphan],
+            include_orphans_as_products=True,
+        )
+
+        self.assertEqual([record["id"] for record in output_records], ["103"])
+        self.assertEqual(stats["output_orphan_products"], 1)
+
+
 class TestSyncStatusHelpers(unittest.TestCase):
+    def test_compact_sync_status_section_preserves_admin_panel_fields(self):
+        compact = lf._compact_sync_status_section(
+            {
+                "global_total_records": "10",
+                "global_processed": 4,
+                "sync_stage": "sync",
+                "pre_audit_executed": True,
+                "pre_audit_summary": {
+                    "diff_total": "3",
+                    "unchanged_records": 7,
+                    "ignored_detail": "not stored",
+                },
+                "large_debug_value": "not stored",
+            }
+        )
+
+        self.assertEqual(compact["global_total_records"], 10)
+        self.assertEqual(compact["global_processed"], 4)
+        self.assertEqual(compact["sync_stage"], "sync")
+        self.assertTrue(compact["pre_audit_executed"])
+        self.assertEqual(
+            compact["pre_audit_summary"],
+            {
+                "unchanged_records": 7,
+                "diff_total": 3,
+            },
+        )
+        self.assertNotIn("large_debug_value", compact)
+
     def test_safe_get_sync_status_returns_dict(self):
         fake = _FakeSSM(payload='{"status":"running","updated_at_unix":123}')
         with patch.object(lf, "ssm", fake):
