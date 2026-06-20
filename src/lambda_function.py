@@ -19,6 +19,7 @@ import boto3
 s3 = boto3.client("s3")
 lambda_api = boto3.client("lambda")
 sqs_api = boto3.client("sqs")
+sns_api = boto3.client("sns")
 ssm = boto3.client("ssm")
 DEFAULT_BL_API_URL = "https://api.baselinker.com/connector.php"
 BL_API_TOKEN_SSM_PARAM = os.getenv(
@@ -368,6 +369,135 @@ def _env_str(name: str, default: str = "") -> str:
     return str(raw_value).strip()
 
 
+def _post_audit_issue_details(sync_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if bool(sync_result.get("has_more_batches")):
+        return None
+    if not bool(sync_result.get("post_audit_executed")):
+        return None
+
+    raw_summary = sync_result.get("post_audit_summary")
+    audit_summary = raw_summary if isinstance(raw_summary, dict) else {}
+    audit_error = _clean(sync_result.get("post_audit_error", ""))
+    difference_count = _parse_int(str(audit_summary.get("diff_total", 0)), 0)
+    if difference_count <= 0 and audit_error == "":
+        return None
+
+    return {
+        "audit_summary": audit_summary,
+        "audit_error": audit_error,
+        "difference_count": max(0, difference_count),
+        "summary_key": _clean(sync_result.get("post_audit_summary_key", "")),
+        "details_key": _clean(sync_result.get("post_audit_details_key", "")),
+    }
+
+
+def _build_post_audit_alert_message(
+    issue_details: Dict[str, Any],
+    run_id: str,
+    output_bucket: str,
+    admin_portal_url: str,
+) -> str:
+    audit_summary = issue_details.get("audit_summary")
+    if not isinstance(audit_summary, dict):
+        audit_summary = {}
+
+    lines = [
+        "The post-sync consistency audit requires attention.",
+        "",
+        f"Run ID: {_clean(run_id) or 'unknown'}",
+        f"Detected differences: {int(issue_details.get('difference_count', 0) or 0)}",
+        f"Records with differences: {_parse_int(str(audit_summary.get('changed_records', 0)), 0)}",
+        f"Missing in BaseLinker: {_parse_int(str(audit_summary.get('missing_in_bl', 0)), 0)}",
+        f"Extra in BaseLinker: {_parse_int(str(audit_summary.get('extra_in_bl', 0)), 0)}",
+    ]
+
+    audit_error = _clean(issue_details.get("audit_error", ""))
+    if audit_error != "":
+        lines.extend(["", f"Audit error: {audit_error}"])
+
+    raw_breakdown = audit_summary.get("diff_breakdown")
+    if isinstance(raw_breakdown, dict) and raw_breakdown:
+        lines.extend(["", "Difference breakdown:"])
+        for difference_type in sorted(raw_breakdown):
+            difference_count = _parse_int(str(raw_breakdown[difference_type]), 0)
+            lines.append(f"- {difference_type}: {difference_count}")
+
+    artifact_locations = []
+    bucket_name = _clean(output_bucket)
+    for label, key_name in (
+        ("Summary", "summary_key"),
+        ("Details", "details_key"),
+    ):
+        object_key = _clean(issue_details.get(key_name, ""))
+        if bucket_name != "" and object_key != "":
+            artifact_locations.append(f"- {label}: s3://{bucket_name}/{object_key}")
+    if artifact_locations:
+        lines.extend(["", "Audit artifacts:", *artifact_locations])
+
+    portal_url = _clean(admin_portal_url)
+    if portal_url != "":
+        lines.extend(["", f"Administration portal: {portal_url}"])
+
+    return "\n".join(lines)
+
+
+def _publish_post_audit_alert(
+    sync_result: Dict[str, Any],
+    run_id: str,
+    topic_arn: str,
+    output_bucket: str,
+    admin_portal_url: str,
+) -> Dict[str, Any]:
+    issue_details = _post_audit_issue_details(sync_result)
+    if issue_details is None:
+        return {
+            "required": False,
+            "published": False,
+            "message_id": "",
+            "error": "",
+        }
+
+    notification_topic_arn = _clean(topic_arn)
+    if notification_topic_arn == "":
+        error_message = "Post-sync audit alert topic is not configured."
+        print(f"[post-sync-alert] {error_message}")
+        return {
+            "required": True,
+            "published": False,
+            "message_id": "",
+            "error": error_message,
+        }
+
+    message = _build_post_audit_alert_message(
+        issue_details=issue_details,
+        run_id=run_id,
+        output_bucket=output_bucket,
+        admin_portal_url=admin_portal_url,
+    )
+    try:
+        response = sns_api.publish(
+            TopicArn=notification_topic_arn,
+            Subject="Comarch-BaseLinker sync: post-sync audit alert",
+            Message=message,
+        )
+    except Exception as exc:
+        error_message = f"{type(exc).__name__}: {exc}"
+        print(f"[post-sync-alert] failed to publish notification: {error_message}")
+        return {
+            "required": True,
+            "published": False,
+            "message_id": "",
+            "error": error_message,
+        }
+
+    return {
+        "required": True,
+        "published": True,
+        "message_id": _clean(response.get("MessageId", "")),
+        "error": "",
+    }
+
+
 def _extract_blocked_token_until_unix(raw_error: str) -> int:
     text = _clean(raw_error)
     if text == "":
@@ -449,7 +579,12 @@ def _compact_sync_status_section(status_section: Dict[str, Any]) -> Dict[str, An
         if field_value != "":
             compact_section[field_name] = field_value
 
-    for field_name in ("has_more_batches", "continuation_enqueued"):
+    for field_name in (
+        "has_more_batches",
+        "continuation_enqueued",
+        "post_audit_alert_required",
+        "post_audit_alert_published",
+    ):
         if field_name in status_section:
             compact_section[field_name] = bool(
                 status_section.get(field_name, False)
@@ -492,6 +627,7 @@ def _compact_sync_status_section(status_section: Dict[str, Any]) -> Dict[str, An
         "post_audit_summary_key",
         "pre_audit_error",
         "post_audit_error",
+        "post_audit_alert_error",
     ):
         field_value = _clean(status_section.get(field_name, ""))
         if field_value != "":
@@ -4575,6 +4711,26 @@ def lambda_handler(event, context):
                 result["continuation_delay_seconds"] = int(continuation_result.get("delay_seconds", 0) or 0)
                 result["continuation_message_id"] = _clean(continuation_result.get("message_id", ""))
                 result["continuation_next_depth"] = next_depth
+
+        post_audit_alert = _publish_post_audit_alert(
+            sync_result=result,
+            run_id=run_id,
+            topic_arn=_env_str("POST_SYNC_ALERT_TOPIC_ARN", ""),
+            output_bucket=output_bucket,
+            admin_portal_url=_env_str("ADMIN_PORTAL_URL", ""),
+        )
+        result["post_audit_alert_required"] = bool(
+            post_audit_alert.get("required", False)
+        )
+        result["post_audit_alert_published"] = bool(
+            post_audit_alert.get("published", False)
+        )
+        result["post_audit_alert_message_id"] = _clean(
+            post_audit_alert.get("message_id", "")
+        )
+        result["post_audit_alert_error"] = _clean(
+            post_audit_alert.get("error", "")
+        )
 
         if result.get("has_more_batches"):
             if result.get("continuation_enqueued"):

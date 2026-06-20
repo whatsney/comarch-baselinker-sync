@@ -18,6 +18,8 @@ values are stored in this repository.
 - respects the BaseLinker API request limit,
 - resumes work through SQS instead of paying for idle Lambda sleep,
 - runs a post-sync audit and stores summarized audit output in S3,
+- emails post-sync audit details and an administration portal link when the
+  audit finds remaining inconsistencies or fails,
 - exposes a password-protected administration panel through API Gateway,
 - publishes progress and ETA through SSM Parameter Store,
 - includes an AWS budget guard that can pause scheduled processing.
@@ -32,6 +34,7 @@ flowchart LR
   L <--> Q[SQS continuation queue]
   L --> S3[S3 snapshot and audit reports]
   L --> SSM[SSM status and configuration]
+  L --> N[SNS email alerts]
   E[EventBridge Scheduler] --> L
   UI[API Gateway admin panel] --> L
   UI --> SSM
@@ -115,7 +118,7 @@ The deployment workflow reads these GitHub Actions secrets:
 | `CLIENT_PRIMARY_DARK_COLOR` | Dark primary color as six-digit hex |
 | `CLIENT_SECONDARY_COLOR` | Customer secondary color as six-digit hex |
 | `CLIENT_LOGO_BASE64` | Private PNG logo encoded as Base64 |
-| `BUDGET_ALERT_EMAIL` | AWS Budget notification address |
+| `BUDGET_ALERT_EMAIL` | AWS Budget and post-sync audit notification address |
 | `BUDGET_LIMIT_USD` | Monthly budget limit |
 
 The deployment is intentionally manual through **Actions → Deploy to AWS →
@@ -156,15 +159,15 @@ Before the first deployment, prepare:
 - a BaseLinker API token with access to inventory products, categories,
   manufacturers, and stock,
 - the target BaseLinker inventory ID and warehouse ID,
-- an email address for budget notifications,
+- an email address for budget and post-sync audit notifications,
 - optional private customer branding encoded as GitHub Actions secrets.
 
 The IAM deployment identity must be able to:
 
 - bootstrap and deploy CloudFormation stacks,
 - create and update IAM roles and policies,
-- manage Lambda, S3, SQS, EventBridge Scheduler, API Gateway HTTP APIs, SSM
-  parameters, and AWS Budgets,
+- manage Lambda, S3, SNS, SQS, EventBridge Scheduler, API Gateway HTTP APIs,
+  SSM parameters, and AWS Budgets,
 - read the current AWS account identity.
 
 For an initial private deployment, an administrator-level deployment identity
@@ -193,7 +196,9 @@ dedicated least-privilege role or GitHub OIDC role. The current workflow uses
 8. Open **Actions → Deploy to AWS → Run workflow**.
 9. Enter `DEPLOY` in the confirmation field and start the workflow.
 10. Wait for both CloudFormation stacks to finish successfully.
-11. Read the pipeline stack outputs. `AdminUrl` is the administration panel
+11. Confirm the SNS email subscription sent to `BUDGET_ALERT_EMAIL`. Post-sync
+    audit alerts are not delivered until this one-time confirmation is complete.
+12. Read the pipeline stack outputs. `AdminUrl` is the administration panel
     address; the other outputs identify the Lambda, S3 bucket, schedule, and
     SQS continuation queue.
 
@@ -216,8 +221,11 @@ After the first deployment:
 7. Verify that the panel reaches the post-sync audit and reports no remaining
    inconsistencies.
 8. Verify the audit summary and details objects in the deployment S3 bucket.
-9. Confirm that the AWS Budget exists and that notification emails are
+9. Confirm that the AWS Budget exists and that budget notification emails are
    delivered.
+10. Confirm that the post-sync audit SNS subscription is active. Alerts include
+    the audit counters, S3 artifact locations, and `AdminUrl` when the final
+    audit reports a non-zero difference count or an audit error.
 
 Use a test BaseLinker inventory and warehouse for the first deployment. Change
 to production targets only after a successful audit and manual data review.
@@ -280,7 +288,7 @@ target account, region, stack names, and retained data first.
 ### CDK bootstrap or deployment is denied
 
 The deployment IAM identity is missing permissions for CloudFormation, IAM,
-S3, Lambda, SQS, Scheduler, API Gateway, SSM, Budgets, or CDK bootstrap assets.
+S3, Lambda, SNS, SQS, Scheduler, API Gateway, SSM, Budgets, or CDK bootstrap assets.
 Review the failing AWS API action in the workflow log and update the deployment
 role.
 

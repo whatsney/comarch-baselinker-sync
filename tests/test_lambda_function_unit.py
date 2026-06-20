@@ -44,6 +44,21 @@ class _FakeS3:
         self.deleted.append((Bucket, Key))
 
 
+class _FakeSNS:
+    def __init__(self):
+        self.publish_calls = []
+
+    def publish(self, **kwargs):
+        self.publish_calls.append(kwargs)
+        return {"MessageId": "message-123"}
+
+
+class _FailingSNS:
+    @staticmethod
+    def publish(**_kwargs):
+        raise RuntimeError("SNS unavailable")
+
+
 class _Ctx:
     aws_request_id = "req-1"
     invoked_function_arn = "arn:aws:lambda:eu-north-1:111111111111:function:comarch-baselinker-sync"
@@ -148,6 +163,8 @@ class TestSyncStatusHelpers(unittest.TestCase):
                     "ignored_detail": "not stored",
                 },
                 "large_debug_value": "not stored",
+                "post_audit_alert_required": True,
+                "post_audit_alert_published": True,
             }
         )
 
@@ -155,6 +172,8 @@ class TestSyncStatusHelpers(unittest.TestCase):
         self.assertEqual(compact["global_processed"], 4)
         self.assertEqual(compact["sync_stage"], "sync")
         self.assertTrue(compact["pre_audit_executed"])
+        self.assertTrue(compact["post_audit_alert_required"])
+        self.assertTrue(compact["post_audit_alert_published"])
         self.assertEqual(
             compact["pre_audit_summary"],
             {
@@ -163,6 +182,7 @@ class TestSyncStatusHelpers(unittest.TestCase):
             },
         )
         self.assertNotIn("large_debug_value", compact)
+
 
     def test_safe_get_sync_status_returns_dict(self):
         fake = _FakeSSM(payload='{"status":"running","updated_at_unix":123}')
@@ -198,6 +218,100 @@ class TestSyncStatusHelpers(unittest.TestCase):
 
     def test_extract_status_updated_at_unix_returns_zero_when_missing(self):
         self.assertEqual(lf._extract_status_updated_at_unix({}), 0)
+
+
+class TestPostSyncAuditAlerts(unittest.TestCase):
+    @staticmethod
+    def _audit_result(diff_total=3, audit_error=""):
+        has_differences = diff_total > 0
+        return {
+            "has_more_batches": False,
+            "post_audit_executed": True,
+            "post_audit_summary": {
+                "diff_total": diff_total,
+                "changed_records": 2 if has_differences else 0,
+                "missing_in_bl": 1 if has_differences else 0,
+                "extra_in_bl": 0,
+                "diff_breakdown": (
+                    {"missing_in_bl": 1, "price": 2}
+                    if has_differences
+                    else {}
+                ),
+            },
+            "post_audit_error": audit_error,
+            "post_audit_summary_key": "feeds/products.bl-audit-post.summary.json",
+            "post_audit_details_key": "feeds/products.bl-audit-post.details.ndjson",
+        }
+
+    def test_publishes_details_and_portal_link_when_post_audit_finds_differences(self):
+        fake_sns = _FakeSNS()
+
+        with patch.object(lf, "sns_api", fake_sns):
+            outcome = lf._publish_post_audit_alert(
+                sync_result=self._audit_result(),
+                run_id="run-123",
+                topic_arn="arn:aws:sns:eu-north-1:111111111111:post-sync-alerts",
+                output_bucket="audit-bucket",
+                admin_portal_url="https://portal.example.com/",
+            )
+
+        self.assertTrue(outcome["required"])
+        self.assertTrue(outcome["published"])
+        self.assertEqual(outcome["message_id"], "message-123")
+        self.assertEqual(len(fake_sns.publish_calls), 1)
+        published_message = fake_sns.publish_calls[0]["Message"]
+        self.assertIn("Detected differences: 3", published_message)
+        self.assertIn("- price: 2", published_message)
+        self.assertIn(
+            "s3://audit-bucket/feeds/products.bl-audit-post.details.ndjson",
+            published_message,
+        )
+        self.assertIn("Administration portal: https://portal.example.com/", published_message)
+
+    def test_does_not_publish_when_post_audit_is_clean(self):
+        fake_sns = _FakeSNS()
+
+        with patch.object(lf, "sns_api", fake_sns):
+            outcome = lf._publish_post_audit_alert(
+                sync_result=self._audit_result(diff_total=0),
+                run_id="run-123",
+                topic_arn="arn:aws:sns:eu-north-1:111111111111:post-sync-alerts",
+                output_bucket="audit-bucket",
+                admin_portal_url="https://portal.example.com/",
+            )
+
+        self.assertFalse(outcome["required"])
+        self.assertFalse(outcome["published"])
+        self.assertEqual(fake_sns.publish_calls, [])
+
+    def test_audit_failure_also_requires_notification(self):
+        issue_details = lf._post_audit_issue_details(
+            self._audit_result(diff_total=0, audit_error="TimeoutError: audit timed out")
+        )
+
+        self.assertIsNotNone(issue_details)
+        self.assertEqual(issue_details["difference_count"], 0)
+        self.assertIn("audit timed out", issue_details["audit_error"])
+
+    def test_publish_failure_is_reported_without_failing_the_sync(self):
+        with patch.object(lf, "sns_api", _FailingSNS()):
+            outcome = lf._publish_post_audit_alert(
+                sync_result=self._audit_result(),
+                run_id="run-123",
+                topic_arn="arn:aws:sns:eu-north-1:111111111111:post-sync-alerts",
+                output_bucket="audit-bucket",
+                admin_portal_url="https://portal.example.com/",
+            )
+
+        self.assertTrue(outcome["required"])
+        self.assertFalse(outcome["published"])
+        self.assertIn("SNS unavailable", outcome["error"])
+
+    def test_intermediate_batch_never_requires_notification(self):
+        sync_result = self._audit_result()
+        sync_result["has_more_batches"] = True
+
+        self.assertIsNone(lf._post_audit_issue_details(sync_result))
 
 
 class TestStateKeyHelpers(unittest.TestCase):

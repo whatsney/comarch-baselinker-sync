@@ -12,6 +12,8 @@ from aws_cdk import (
     aws_iam as iam,
     aws_lambda as lambda_,
     aws_lambda_event_sources as lambda_event_sources,
+    aws_sns as sns,
+    aws_sns_subscriptions as sns_subscriptions,
     aws_sqs as sqs,
     aws_s3 as s3,
     aws_scheduler as scheduler,
@@ -76,6 +78,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
         brand_secondary_color = context_text("brandSecondaryColor", "#183c5c")
         brand_logo_enabled = context_bool("brandLogoEnabled", False)
         budget_name = context_text("budgetName", "comarch-baselinker-sync-monthly-budget")
+        budget_alert_email = context_text("budgetAlertEmail", "").strip()
         budget_limit_usd = context_text("budgetLimitUsd", "30")
         budget_usd_to_pln_rate = context_text("budgetUsdToPlnRate", "4.00")
         budget_fx_rate_ssm_param = context_text(
@@ -198,6 +201,17 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 )
             )
 
+        post_sync_alert_topic = None
+        if budget_alert_email != "":
+            post_sync_alert_topic = sns.Topic(
+                self,
+                "PostSyncAuditAlertTopic",
+                display_name="Comarch-BaseLinker post-sync audit alerts",
+            )
+            post_sync_alert_topic.add_subscription(
+                sns_subscriptions.EmailSubscription(budget_alert_email)
+            )
+
         lambda_env = {
             "COMARCH_URL": comarch_url,
             "OUTPUT_BUCKET": bucket.bucket_name,
@@ -240,6 +254,8 @@ class ComarchBaseLinkerPipelineStack(Stack):
             ),
             "BL_BLOCKED_TOKEN_MAX_INLINE_WAIT_SEC": str(bl_blocked_token_max_inline_wait_sec),
         }
+        if post_sync_alert_topic is not None:
+            lambda_env["POST_SYNC_ALERT_TOPIC_ARN"] = post_sync_alert_topic.topic_arn
 
         sync_function = lambda_.Function(
             self,
@@ -255,6 +271,8 @@ class ComarchBaseLinkerPipelineStack(Stack):
         )
 
         bucket.grant_read_write(sync_function)
+        if post_sync_alert_topic is not None:
+            post_sync_alert_topic.grant_publish(sync_function)
 
         param_resource_path = bl_sync_status_ssm_param.lstrip("/")
         param_arn = f"arn:aws:ssm:{self.region}:{self.account}:parameter/{param_resource_path}"
@@ -507,7 +525,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             environment={
                 "SYNC_STATUS_PARAM": bl_sync_status_ssm_param,
                 "SYNC_CONFIG_PARAM": bl_sync_config_ssm_param,
-                "SYNC_FUNCTION_NAME": sync_function.function_name,
+                "SYNC_FUNCTION_NAME": function_name,
                 "DEFAULT_COMARCH_XML_URL": comarch_url,
                 "DEFAULT_BL_INVENTORY_ID": bl_inventory_id,
                 "DEFAULT_BL_WAREHOUSE_ID": bl_warehouse_id,
@@ -628,6 +646,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             methods=[apigwv2.HttpMethod.POST],
             integration=admin_integration,
         )
+        sync_function.add_environment("ADMIN_PORTAL_URL", admin_api.url or "")
 
         CfnOutput(self, "BucketName", value=bucket.bucket_name)
         CfnOutput(self, "FeedObjectKey", value=output_key)
@@ -652,3 +671,9 @@ class ComarchBaseLinkerPipelineStack(Stack):
             value=budget_guard_function.function_name,
         )
         CfnOutput(self, "AdminUrl", value=admin_api.url or "")
+        if post_sync_alert_topic is not None:
+            CfnOutput(
+                self,
+                "PostSyncAuditAlertTopicArn",
+                value=post_sync_alert_topic.topic_arn,
+            )
