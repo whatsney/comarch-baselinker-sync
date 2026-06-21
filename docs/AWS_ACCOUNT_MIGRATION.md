@@ -21,6 +21,12 @@ Each GitHub Environment must have its own temporary AWS credential set,
 resource names, and `EXPECTED_AWS_ACCOUNT_ID`. Every plan or deployment stops
 if STS returns a different account.
 
+For ongoing deployments after migration, prefer a dedicated IAM user whose
+only permission is `sts:AssumeRole` on the account-specific deployment role.
+Store that user's access key pair as environment secrets and set the role ARN
+as `AWS_ROLE_ARN`. Do not grant infrastructure permissions directly to the IAM
+user, and remove `AWS_SESSION_TOKEN` when the stored key pair is long-lived.
+
 Before any live command, set and verify the intended profile explicitly:
 
 ```bash

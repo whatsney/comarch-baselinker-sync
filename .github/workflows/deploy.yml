@@ -36,6 +36,7 @@ jobs:
     environment: ${{ inputs.deployment_environment }}
     env:
       AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
       EXPECTED_AWS_ACCOUNT_ID: ${{ vars.EXPECTED_AWS_ACCOUNT_ID }}
       SYNC_ENABLED: ${{ vars.SYNC_ENABLED }}
       SCHEDULE_EXPRESSION: ${{ vars.SCHEDULE_EXPRESSION }}
@@ -94,6 +95,9 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: repository-deployment
+          role-duration-seconds: 3600
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
 
       - name: Validate deployment configuration
