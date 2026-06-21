@@ -3,8 +3,22 @@ name: Deploy to AWS
 on:
   workflow_dispatch:
     inputs:
+      deployment_environment:
+        description: Select the AWS account configuration
+        required: true
+        type: choice
+        options:
+          - client-production
+          - source-rollback
+      operation:
+        description: Run a read-only diff or deploy the reviewed change
+        required: true
+        type: choice
+        options:
+          - DIFF
+          - DEPLOY
       confirmation:
-        description: Type DEPLOY to confirm
+        description: Type the selected operation exactly (DIFF or DEPLOY)
         required: true
         type: string
 
@@ -12,15 +26,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-deploy
+  group: deploy-${{ inputs.deployment_environment }}
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: ${{ inputs.confirmation == 'DEPLOY' }}
+    if: ${{ inputs.confirmation == inputs.operation }}
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment_environment }}
     env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
+      EXPECTED_AWS_ACCOUNT_ID: ${{ vars.EXPECTED_AWS_ACCOUNT_ID }}
+      SYNC_ENABLED: ${{ vars.SYNC_ENABLED }}
+      SCHEDULE_EXPRESSION: ${{ vars.SCHEDULE_EXPRESSION }}
+      SCHEDULE_TIMEZONE: ${{ vars.SCHEDULE_TIMEZONE }}
       PIPELINE_STACK_NAME: ${{ secrets.PIPELINE_STACK_NAME }}
       BUDGET_STACK_NAME: ${{ secrets.BUDGET_STACK_NAME }}
       BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
@@ -45,6 +64,7 @@ jobs:
       MAKE_PUBLIC_FEED: ${{ secrets.MAKE_PUBLIC_FEED }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      ADMIN_PASSWORD_SHA256: ${{ secrets.ADMIN_PASSWORD_SHA256 }}
       CLIENT_BRAND_NAME: ${{ secrets.CLIENT_BRAND_NAME }}
       CLIENT_PANEL_TITLE: ${{ secrets.CLIENT_PANEL_TITLE }}
       CLIENT_PANEL_SUBTITLE: ${{ secrets.CLIENT_PANEL_SUBTITLE }}
@@ -73,25 +93,48 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
 
-      - name: Validate required secrets
+      - name: Validate deployment configuration
         shell: bash
         run: |
           set -eu
-          for name in AWS_REGION COMARCH_XML_URL BL_API_TOKEN BL_INVENTORY_ID \
-            BL_WAREHOUSE_ID ADMIN_USERNAME ADMIN_PASSWORD; do
+          for name in AWS_REGION EXPECTED_AWS_ACCOUNT_ID COMARCH_XML_URL \
+            BL_INVENTORY_ID BL_WAREHOUSE_ID ADMIN_USERNAME BUCKET_NAME; do
             if [ -z "${!name:-}" ]; then
               echo "::error::$name is not configured"
               exit 1
             fi
           done
 
+          if [ -z "${ADMIN_PASSWORD:-}" ] && [ -z "${ADMIN_PASSWORD_SHA256:-}" ]; then
+            echo "::error::ADMIN_PASSWORD or ADMIN_PASSWORD_SHA256 is required"
+            exit 1
+          fi
+
+          if [ "${{ inputs.operation }}" = "DEPLOY" ] && [ -z "${BL_API_TOKEN:-}" ]; then
+            echo "::error::BL_API_TOKEN is not configured"
+            exit 1
+          fi
+
       - name: Prepare deployment values
         shell: bash
         run: |
           set -eu
           ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          if [ "$ACCOUNT_ID" != "$EXPECTED_AWS_ACCOUNT_ID" ]; then
+            echo "::error::AWS credentials do not match the selected environment"
+            exit 1
+          fi
+
+          SYNC_ENABLED_VALUE="${SYNC_ENABLED:-false}"
+          if [ "$SYNC_ENABLED_VALUE" != "true" ] && [ "$SYNC_ENABLED_VALUE" != "false" ]; then
+            echo "::error::SYNC_ENABLED must be true or false"
+            exit 1
+          fi
+          SCHEDULE_EXPRESSION_VALUE="${SCHEDULE_EXPRESSION:-cron(0 0,12,17 * * ? *)}"
+          SCHEDULE_TIMEZONE_VALUE="${SCHEDULE_TIMEZONE:-Europe/Warsaw}"
           TOKEN_PARAM="${BL_API_TOKEN_SSM_PARAM:-/comarch-baselinker-sync/api-token}"
           STATUS_PARAM="${BL_SYNC_STATUS_SSM_PARAM:-/comarch-baselinker-sync/push-sync-status}"
           CONFIG_PARAM="${BL_SYNC_CONFIG_SSM_PARAM:-/comarch-baselinker-sync/sync-config}"
@@ -111,7 +154,15 @@ jobs:
           PRIMARY_COLOR="${CLIENT_PRIMARY_COLOR:-#1673b8}"
           PRIMARY_DARK_COLOR="${CLIENT_PRIMARY_DARK_COLOR:-#0f5d96}"
           SECONDARY_COLOR="${CLIENT_SECONDARY_COLOR:-#183c5c}"
-          PASSWORD_HASH="$(python -c 'import hashlib,os; print(hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest())')"
+          if [ -n "${ADMIN_PASSWORD_SHA256:-}" ]; then
+            if ! [[ "$ADMIN_PASSWORD_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]; then
+              echo "::error::ADMIN_PASSWORD_SHA256 must be a 64-character SHA-256 hash"
+              exit 1
+            fi
+            PASSWORD_HASH="${ADMIN_PASSWORD_SHA256,,}"
+          else
+            PASSWORD_HASH="$(python -c 'import hashlib,os; print(hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest())')"
+          fi
           EFFECTIVE_BUCKET_NAME="${BUCKET_NAME:-comarch-baselinker-sync-${ACCOUNT_ID}-${AWS_REGION}}"
           for value in "$BRAND_NAME" "$PANEL_TITLE" "$PANEL_SUBTITLE" \
             "$PRIMARY_COLOR" "$PRIMARY_DARK_COLOR" "$SECONDARY_COLOR"; do
@@ -119,6 +170,9 @@ jobs:
           done
           {
             echo "AWS_ACCOUNT_ID=$ACCOUNT_ID"
+            echo "SYNC_ENABLED_EFFECTIVE=$SYNC_ENABLED_VALUE"
+            echo "SCHEDULE_EXPRESSION_EFFECTIVE=$SCHEDULE_EXPRESSION_VALUE"
+            echo "SCHEDULE_TIMEZONE_EFFECTIVE=$SCHEDULE_TIMEZONE_VALUE"
             echo "PIPELINE_STACK_NAME_EFFECTIVE=${PIPELINE_STACK_NAME:-ComarchBaseLinkerSyncStack}"
             echo "BUDGET_STACK_NAME_EFFECTIVE=${BUDGET_STACK_NAME:-ComarchBaseLinkerBudgetStack}"
             echo "BUCKET_NAME_EFFECTIVE=$EFFECTIVE_BUCKET_NAME"
@@ -175,6 +229,7 @@ jobs:
           PY
 
       - name: Store BaseLinker token in SSM
+        if: ${{ inputs.operation == 'DEPLOY' }}
         shell: bash
         run: |
           aws ssm put-parameter \
@@ -184,6 +239,7 @@ jobs:
             --overwrite >/dev/null
 
       - name: Bootstrap CDK
+        if: ${{ inputs.operation == 'DEPLOY' }}
         working-directory: cdk_app
         shell: bash
         run: |
@@ -199,12 +255,61 @@ jobs:
               -c region="$AWS_REGION" \
               -c comarchUrl="$COMARCH_XML_URL" \
               -c bucketName="$BUCKET_NAME_EFFECTIVE" \
+              -c syncEnabled="$SYNC_ENABLED_EFFECTIVE" \
               -c blInventoryId="$BL_INVENTORY_ID" \
               -c blWarehouseId="$BL_WAREHOUSE_ID" \
               -c adminPasswordHash="$ADMIN_PASSWORD_HASH"
           done
 
-      - name: Deploy infrastructure
+      - name: Show infrastructure diff
+        working-directory: cdk_app
+        shell: bash
+        run: |
+          npx --yes aws-cdk@2 diff \
+            "$PIPELINE_STACK_NAME_EFFECTIVE" \
+            "$BUDGET_STACK_NAME_EFFECTIVE" \
+            --change-set=false \
+            -c account="$AWS_ACCOUNT_ID" \
+            -c region="$AWS_REGION" \
+            -c pipelineStackName="$PIPELINE_STACK_NAME_EFFECTIVE" \
+            -c budgetStackName="$BUDGET_STACK_NAME_EFFECTIVE" \
+            -c comarchUrl="$COMARCH_XML_URL" \
+            -c bucketName="$BUCKET_NAME_EFFECTIVE" \
+            -c functionName="$FUNCTION_NAME_EFFECTIVE" \
+            -c scheduleName="$SCHEDULE_NAME_EFFECTIVE" \
+            -c scheduleExpression="$SCHEDULE_EXPRESSION_EFFECTIVE" \
+            -c scheduleTimezone="$SCHEDULE_TIMEZONE_EFFECTIVE" \
+            -c syncEnabled="$SYNC_ENABLED_EFFECTIVE" \
+            -c adminApiName="$ADMIN_API_NAME_EFFECTIVE" \
+            -c adminFunctionName="$ADMIN_FUNCTION_NAME_EFFECTIVE" \
+            -c budgetName="$BUDGET_NAME_EFFECTIVE" \
+            -c budgetGuardFunctionName="$BUDGET_GUARD_FUNCTION_NAME_EFFECTIVE" \
+            -c budgetGuardMonthlyScheduleName="$BUDGET_GUARD_MONTHLY_SCHEDULE_NAME_EFFECTIVE" \
+            -c budgetGuardHourlyScheduleName="$BUDGET_GUARD_HOURLY_SCHEDULE_NAME_EFFECTIVE" \
+            -c blApiTokenSsmParam="$BL_API_TOKEN_SSM_PARAM_EFFECTIVE" \
+            -c blSyncStatusSsmParam="$BL_SYNC_STATUS_SSM_PARAM_EFFECTIVE" \
+            -c blSyncConfigSsmParam="$BL_SYNC_CONFIG_SSM_PARAM_EFFECTIVE" \
+            -c budgetFxRateSsmParam="$BUDGET_FX_RATE_SSM_PARAM_EFFECTIVE" \
+            -c budgetGuardStatusSsmParam="$BUDGET_GUARD_STATUS_SSM_PARAM_EFFECTIVE" \
+            -c blInventoryId="$BL_INVENTORY_ID" \
+            -c blWarehouseId="$BL_WAREHOUSE_ID" \
+            -c blApiMaxRpm="$BL_API_MAX_RPM_EFFECTIVE" \
+            -c makePublicFeed="$MAKE_PUBLIC_FEED_EFFECTIVE" \
+            -c adminUsername="$ADMIN_USERNAME" \
+            -c adminPasswordHash="$ADMIN_PASSWORD_HASH" \
+            -c brandName="$CLIENT_BRAND_NAME_EFFECTIVE" \
+            -c brandPanelTitle="$CLIENT_PANEL_TITLE_EFFECTIVE" \
+            -c brandPanelSubtitle="$CLIENT_PANEL_SUBTITLE_EFFECTIVE" \
+            -c brandLocale="$CLIENT_LOCALE_EFFECTIVE" \
+            -c brandPrimaryColor="$CLIENT_PRIMARY_COLOR_EFFECTIVE" \
+            -c brandPrimaryDarkColor="$CLIENT_PRIMARY_DARK_COLOR_EFFECTIVE" \
+            -c brandSecondaryColor="$CLIENT_SECONDARY_COLOR_EFFECTIVE" \
+            -c brandLogoEnabled="$CLIENT_LOGO_ENABLED" \
+            -c budgetAlertEmail="${BUDGET_ALERT_EMAIL:-}" \
+            -c budgetLimitUsd="$BUDGET_LIMIT_USD_EFFECTIVE"
+
+      - name: Deploy reviewed infrastructure
+        if: ${{ inputs.operation == 'DEPLOY' }}
         working-directory: cdk_app
         shell: bash
         run: |
@@ -220,6 +325,9 @@ jobs:
             -c bucketName="$BUCKET_NAME_EFFECTIVE" \
             -c functionName="$FUNCTION_NAME_EFFECTIVE" \
             -c scheduleName="$SCHEDULE_NAME_EFFECTIVE" \
+            -c scheduleExpression="$SCHEDULE_EXPRESSION_EFFECTIVE" \
+            -c scheduleTimezone="$SCHEDULE_TIMEZONE_EFFECTIVE" \
+            -c syncEnabled="$SYNC_ENABLED_EFFECTIVE" \
             -c adminApiName="$ADMIN_API_NAME_EFFECTIVE" \
             -c adminFunctionName="$ADMIN_FUNCTION_NAME_EFFECTIVE" \
             -c budgetName="$BUDGET_NAME_EFFECTIVE" \
