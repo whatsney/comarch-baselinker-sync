@@ -187,14 +187,22 @@ jobs:
         working-directory: cdk_app
         shell: bash
         run: |
-          npx --yes aws-cdk@2 bootstrap "aws://${AWS_ACCOUNT_ID}/${AWS_REGION}" \
-            -c account="$AWS_ACCOUNT_ID" \
-            -c region="$AWS_REGION" \
-            -c comarchUrl="$COMARCH_XML_URL" \
-            -c bucketName="$BUCKET_NAME_EFFECTIVE" \
-            -c blInventoryId="$BL_INVENTORY_ID" \
-            -c blWarehouseId="$BL_WAREHOUSE_ID" \
-            -c adminPasswordHash="$ADMIN_PASSWORD_HASH"
+          budget_region="us-east-1"
+          bootstrap_regions=("$AWS_REGION")
+          if [ "$AWS_REGION" != "$budget_region" ]; then
+            bootstrap_regions+=("$budget_region")
+          fi
+
+          for bootstrap_region in "${bootstrap_regions[@]}"; do
+            npx --yes aws-cdk@2 bootstrap "aws://${AWS_ACCOUNT_ID}/${bootstrap_region}" \
+              -c account="$AWS_ACCOUNT_ID" \
+              -c region="$AWS_REGION" \
+              -c comarchUrl="$COMARCH_XML_URL" \
+              -c bucketName="$BUCKET_NAME_EFFECTIVE" \
+              -c blInventoryId="$BL_INVENTORY_ID" \
+              -c blWarehouseId="$BL_WAREHOUSE_ID" \
+              -c adminPasswordHash="$ADMIN_PASSWORD_HASH"
+          done
 
       - name: Deploy infrastructure
         working-directory: cdk_app
