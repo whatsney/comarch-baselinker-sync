@@ -55,7 +55,10 @@ class ComarchBaseLinkerPipelineStack(Stack):
             f"arn:aws:lambda:{self.region}:{self.account}:function:{function_name}"
         )
         schedule_name = context_text("scheduleName", "comarch-baselinker-sync-midnight")
-        schedule_expression = context_text("scheduleExpression", "cron(0 0 * * ? *)")
+        schedule_expression = context_text(
+            "scheduleExpression",
+            "cron(0 0,12,17 * * ? *)",
+        )
         schedule_timezone = context_text("scheduleTimezone", "Europe/Warsaw")
         admin_api_name = context_text("adminApiName", "comarch-baselinker-sync-admin-api")
         admin_function_name = context_text(

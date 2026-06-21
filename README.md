@@ -213,8 +213,8 @@ After the first deployment:
 2. Sign in using `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
 3. Confirm that the displayed Comarch URL, BaseLinker inventory, warehouse,
    and request limit are correct.
-4. Confirm in EventBridge Scheduler that the daily schedule is enabled and
-   uses the `Europe/Warsaw` timezone.
+4. Confirm in EventBridge Scheduler that the schedule is enabled, uses the
+   `Europe/Warsaw` timezone, and runs at 00:00, 12:00, and 17:00 local time.
 5. Confirm that the BaseLinker token exists at `BL_API_TOKEN_SSM_PARAM` as a
    `SecureString`.
 6. Run a manual synchronization from the administration panel.
