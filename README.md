@@ -91,7 +91,7 @@ Configure the following secrets separately in each environment:
 | --- | --- |
 | `AWS_ACCESS_KEY_ID` | AWS deployment credentials |
 | `AWS_SECRET_ACCESS_KEY` | AWS deployment credentials |
-| `AWS_SESSION_TOKEN` | Session token for temporary AWS credentials |
+| `AWS_SESSION_TOKEN` | Session token when using manually refreshed temporary credentials; omit for a dedicated assume-role user |
 | `PIPELINE_STACK_NAME` | Existing or new CDK pipeline stack name |
 | `BUDGET_STACK_NAME` | Existing or new CDK budget stack name |
 | `BUCKET_NAME` | Existing or new S3 bucket name |
@@ -133,6 +133,7 @@ Configure these non-secret variables separately in each environment:
 | Variable | Purpose |
 | --- | --- |
 | `AWS_REGION` | Application region, normally `eu-north-1` |
+| `AWS_ROLE_ARN` | Deployment role assumed by GitHub Actions; recommended for direct deployments without OIDC |
 | `EXPECTED_AWS_ACCOUNT_ID` | Account that must match `sts:GetCallerIdentity` |
 | `SYNC_ENABLED` | `false` for a staged or rollback environment; `true` only for the active account |
 | `SCHEDULE_EXPRESSION` | EventBridge expression, normally `cron(0 0,12,17 * * ? *)` |
@@ -141,6 +142,12 @@ Configure these non-secret variables separately in each environment:
 `BUCKET_NAME` is intentionally required and must be globally unique. Keep the
 same value for updates and rollback of one environment, and use a different
 value in the other account.
+
+For durable direct deployments without GitHub OIDC, store access keys from a
+dedicated IAM user that can only call `sts:AssumeRole` on `AWS_ROLE_ARN`. Attach
+the infrastructure permissions to the role, not to that IAM user. The workflow
+then exchanges the long-lived bootstrap key for a one-hour role session before
+it validates the account, reads the diff, or deploys resources.
 
 The deployment is intentionally manual through **Actions → Deploy to AWS →
 Run workflow**. A normal push runs tests and CDK synthesis only.
