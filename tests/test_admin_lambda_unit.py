@@ -2,7 +2,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from datetime import timezone
+from datetime import datetime, timezone
 import types
 from unittest.mock import patch
 
@@ -22,6 +22,15 @@ if "zoneinfo" not in sys.modules:
     sys.modules["zoneinfo"] = zoneinfo_stub
 
 import admin_lambda as admin  # noqa: E402
+
+
+class _FakeScheduler:
+    def get_schedule(self, **_kwargs):
+        return {
+            "State": "ENABLED",
+            "ScheduleExpression": "cron(0 0,12,17 * * ? *)",
+            "ScheduleExpressionTimezone": "Europe/Warsaw",
+        }
 
 
 class TestAdminStatusSummary(unittest.TestCase):
@@ -104,6 +113,62 @@ class TestAdminStatusSummary(unittest.TestCase):
         self.assertEqual(out["steps"][2]["status"], "running")
         self.assertEqual(out["mutation_total"], 5)
         self.assertEqual(out["mutation_done"], 5)
+
+
+class TestAdminSchedule(unittest.TestCase):
+    def test_next_run_before_noon_is_noon(self):
+        current_time = datetime(2026, 6, 21, 10, 30, tzinfo=admin.POLAND_TZ)
+
+        next_run = admin._next_schedule_run_iso(
+            "cron(0 0,12,17 * * ? *)",
+            "Europe/Warsaw",
+            current_time=current_time,
+        )
+
+        next_run_time = datetime.fromisoformat(next_run)
+        self.assertEqual(next_run_time.date().isoformat(), "2026-06-21")
+        self.assertEqual((next_run_time.hour, next_run_time.minute), (12, 0))
+
+    def test_next_run_at_noon_is_seventeen(self):
+        current_time = datetime(2026, 6, 21, 12, 0, tzinfo=admin.POLAND_TZ)
+
+        next_run = admin._next_schedule_run_iso(
+            "cron(0 0,12,17 * * ? *)",
+            "Europe/Warsaw",
+            current_time=current_time,
+        )
+
+        next_run_time = datetime.fromisoformat(next_run)
+        self.assertEqual(next_run_time.date().isoformat(), "2026-06-21")
+        self.assertEqual((next_run_time.hour, next_run_time.minute), (17, 0))
+
+    def test_next_run_after_seventeen_is_next_midnight(self):
+        current_time = datetime(2026, 6, 21, 17, 1, tzinfo=admin.POLAND_TZ)
+
+        next_run = admin._next_schedule_run_iso(
+            "cron(0 0,12,17 * * ? *)",
+            "Europe/Warsaw",
+            current_time=current_time,
+        )
+
+        next_run_time = datetime.fromisoformat(next_run)
+        self.assertEqual(next_run_time.date().isoformat(), "2026-06-22")
+        self.assertEqual((next_run_time.hour, next_run_time.minute), (0, 0))
+
+    def test_load_schedule_uses_live_expression_for_next_run(self):
+        with patch.object(admin, "scheduler", _FakeScheduler()):
+            with patch.object(
+                admin,
+                "_next_schedule_run_iso",
+                return_value="2026-06-21T17:00:00+02:00",
+            ) as next_run:
+                schedule_status = admin._load_schedule()
+
+        next_run.assert_called_once_with(
+            "cron(0 0,12,17 * * ? *)",
+            "Europe/Warsaw",
+        )
+        self.assertEqual(schedule_status["next_run_iso"], "2026-06-21T17:00:00+02:00")
 
 
 class TestAdminBranding(unittest.TestCase):

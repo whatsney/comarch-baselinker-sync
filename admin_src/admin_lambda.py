@@ -464,30 +464,129 @@ def _load_status() -> dict:
     return {"status": "unknown"}
 
 
-def _next_midnight_pl() -> str:
-    now = datetime.now(POLAND_TZ)
-    candidate = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    if candidate <= now:
-        candidate += timedelta(days=1)
-    return candidate.isoformat()
+def _parse_cron_integer_list(
+    field_value: str,
+    minimum_value: int,
+    maximum_value: int,
+) -> list[int]:
+    parsed_values = []
+    for raw_value in field_value.split(","):
+        normalized_value = raw_value.strip()
+        if not normalized_value.isdigit():
+            return []
+
+        parsed_value = int(normalized_value)
+        if parsed_value < minimum_value or parsed_value > maximum_value:
+            return []
+        parsed_values.append(parsed_value)
+
+    return sorted(set(parsed_values))
+
+
+def _daily_cron_times(schedule_expression: str) -> list[tuple[int, int]]:
+    normalized_expression = schedule_expression.strip()
+    if not normalized_expression.startswith("cron(") or not normalized_expression.endswith(")"):
+        return []
+
+    cron_fields = normalized_expression[5:-1].split()
+    if len(cron_fields) != 6:
+        return []
+
+    minute_field, hour_field, day_of_month, month, day_of_week, year = cron_fields
+    is_daily_schedule = (
+        month == "*"
+        and year == "*"
+        and (
+            (day_of_month == "*" and day_of_week == "?")
+            or (day_of_month == "?" and day_of_week == "*")
+        )
+    )
+    if not is_daily_schedule:
+        return []
+
+    minutes = _parse_cron_integer_list(minute_field, 0, 59)
+    hours = _parse_cron_integer_list(hour_field, 0, 23)
+    if not minutes or not hours:
+        return []
+
+    return sorted((hour, minute) for hour in hours for minute in minutes)
+
+
+def _schedule_timezone(timezone_name: str):
+    normalized_timezone_name = timezone_name.strip()
+    if normalized_timezone_name == "":
+        return POLAND_TZ
+    try:
+        return ZoneInfo(normalized_timezone_name)
+    except Exception:
+        return POLAND_TZ
+
+
+def _next_midnight(current_time: datetime) -> datetime:
+    next_midnight = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    if next_midnight <= current_time:
+        next_midnight += timedelta(days=1)
+    return next_midnight
+
+
+def _next_schedule_run_iso(
+    schedule_expression: str,
+    timezone_name: str,
+    current_time: Optional[datetime] = None,
+) -> str:
+    target_timezone = _schedule_timezone(timezone_name)
+    if current_time is None:
+        schedule_time = datetime.now(target_timezone)
+    elif current_time.tzinfo is None:
+        schedule_time = current_time.replace(tzinfo=target_timezone)
+    else:
+        schedule_time = current_time.astimezone(target_timezone)
+
+    daily_run_times = _daily_cron_times(schedule_expression)
+    if not daily_run_times:
+        return _next_midnight(schedule_time).isoformat()
+
+    for day_offset in range(2):
+        candidate_date = (schedule_time + timedelta(days=day_offset)).date()
+        for hour, minute in daily_run_times:
+            candidate_time = datetime(
+                candidate_date.year,
+                candidate_date.month,
+                candidate_date.day,
+                hour,
+                minute,
+                tzinfo=target_timezone,
+            )
+            if candidate_time > schedule_time:
+                return candidate_time.isoformat()
+
+    return _next_midnight(schedule_time).isoformat()
 
 
 def _load_schedule() -> dict:
     schedule_status = {
         "name": SCHEDULE_NAME,
         "group": SCHEDULE_GROUP,
-        "next_run_iso": _next_midnight_pl(),
+        "next_run_iso": _next_midnight(datetime.now(POLAND_TZ)).isoformat(),
     }
     try:
         schedule_response = scheduler.get_schedule(
             Name=SCHEDULE_NAME,
             GroupName=SCHEDULE_GROUP,
         )
+        schedule_expression = str(schedule_response.get("ScheduleExpression") or "")
+        schedule_timezone = str(
+            schedule_response.get("ScheduleExpressionTimezone") or "Europe/Warsaw"
+        )
         schedule_status.update(
             {
                 "state": schedule_response.get("State"),
-                "expression": schedule_response.get("ScheduleExpression"),
-                "timezone": schedule_response.get("ScheduleExpressionTimezone"),
+                "expression": schedule_expression,
+                "timezone": schedule_timezone,
+                "next_run_iso": _next_schedule_run_iso(
+                    schedule_expression,
+                    schedule_timezone,
+                ),
             }
         )
     except Exception as exc:
