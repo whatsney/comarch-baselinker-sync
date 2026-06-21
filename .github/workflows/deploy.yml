@@ -185,7 +185,16 @@ jobs:
 
       - name: Bootstrap CDK
         working-directory: cdk_app
-        run: npx --yes aws-cdk@2 bootstrap "aws://${AWS_ACCOUNT_ID}/${AWS_REGION}"
+        shell: bash
+        run: |
+          npx --yes aws-cdk@2 bootstrap "aws://${AWS_ACCOUNT_ID}/${AWS_REGION}" \
+            -c account="$AWS_ACCOUNT_ID" \
+            -c region="$AWS_REGION" \
+            -c comarchUrl="$COMARCH_XML_URL" \
+            -c bucketName="$BUCKET_NAME_EFFECTIVE" \
+            -c blInventoryId="$BL_INVENTORY_ID" \
+            -c blWarehouseId="$BL_WAREHOUSE_ID" \
+            -c adminPasswordHash="$ADMIN_PASSWORD_HASH"
 
       - name: Deploy infrastructure
         working-directory: cdk_app
