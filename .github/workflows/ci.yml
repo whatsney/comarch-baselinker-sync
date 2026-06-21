@@ -52,4 +52,5 @@ jobs:
             -c bucketName=comarch-baselinker-sync-ci-example \
             -c blInventoryId=12345 \
             -c blWarehouseId=bl_12345 \
+            -c budgetAlertEmail=alerts@example.com \
             -c adminPasswordHash=0000000000000000000000000000000000000000000000000000000000000000
