@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from aws_cdk import (
@@ -21,6 +22,9 @@ from aws_cdk import (
 from constructs import Construct
 
 from context_values import get_context_bool, get_context_int, get_context_text
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ComarchBaseLinkerPipelineStack(Stack):
@@ -60,6 +64,8 @@ class ComarchBaseLinkerPipelineStack(Stack):
             "cron(0 0,12,17 * * ? *)",
         )
         schedule_timezone = context_text("scheduleTimezone", "Europe/Warsaw")
+        sync_enabled = context_bool("syncEnabled", False)
+        sync_resource_state = "ENABLED" if sync_enabled else "DISABLED"
         admin_api_name = context_text("adminApiName", "comarch-baselinker-sync-admin-api")
         admin_function_name = context_text(
             "adminFunctionName",
@@ -177,6 +183,10 @@ class ComarchBaseLinkerPipelineStack(Stack):
         else:
             reserved_concurrency = int(reserved_concurrency_raw)
 
+        # A new environment must stay inert until cutover. Reserved concurrency
+        # zero also blocks direct and self-chained invocations while paused.
+        deployed_reserved_concurrency = reserved_concurrency if sync_enabled else 0
+
         bucket = s3.Bucket(
             self,
             "FeedBucket",
@@ -266,10 +276,10 @@ class ComarchBaseLinkerPipelineStack(Stack):
             function_name=function_name,
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="lambda_function.lambda_handler",
-            code=lambda_.Code.from_asset("../src"),
+            code=lambda_.Code.from_asset(str(REPOSITORY_ROOT / "src")),
             timeout=Duration.seconds(lambda_timeout_sec),
             memory_size=lambda_memory_mb,
-            reserved_concurrent_executions=reserved_concurrency,
+            reserved_concurrent_executions=deployed_reserved_concurrency,
             environment=lambda_env,
         )
 
@@ -349,7 +359,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 continuation_queue,
                 batch_size=1,
                 max_batching_window=Duration.seconds(0),
-                enabled=True,
+                enabled=sync_enabled,
             )
         )
 
@@ -361,7 +371,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             function_name=budget_guard_function_name,
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="lambda_function.lambda_handler",
-            code=lambda_.Code.from_asset("../budget_guard_src"),
+            code=lambda_.Code.from_asset(str(REPOSITORY_ROOT / "budget_guard_src")),
             timeout=Duration.seconds(60),
             memory_size=256,
             environment={
@@ -444,7 +454,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             "DailySchedule",
             name=schedule_name,
             group_name="default",
-            state="ENABLED",
+            state=sync_resource_state,
             schedule_expression=schedule_expression,
             schedule_expression_timezone=schedule_timezone,
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
@@ -480,7 +490,8 @@ class ComarchBaseLinkerPipelineStack(Stack):
             "BudgetGuardMonthlyEnableSchedule",
             name=budget_guard_monthly_schedule_name,
             group_name="default",
-            state="ENABLED",
+            # Do not let the monthly reset silently unpause a staged migration.
+            state=sync_resource_state,
             schedule_expression="cron(5 0 1 * ? *)",
             schedule_expression_timezone="Europe/Warsaw",
             flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
@@ -522,7 +533,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             function_name=admin_function_name,
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="admin_lambda.lambda_handler",
-            code=lambda_.Code.from_asset("../admin_src"),
+            code=lambda_.Code.from_asset(str(REPOSITORY_ROOT / "admin_src")),
             timeout=Duration.seconds(30),
             memory_size=256,
             environment={
@@ -659,8 +670,8 @@ class ComarchBaseLinkerPipelineStack(Stack):
             self,
             "LambdaReservedConcurrency",
             value=(
-                str(reserved_concurrency)
-                if reserved_concurrency is not None
+                str(deployed_reserved_concurrency)
+                if deployed_reserved_concurrency is not None
                 else "unreserved"
             ),
         )

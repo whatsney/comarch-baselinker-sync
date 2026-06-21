@@ -79,13 +79,19 @@ python -m unittest discover -s tests -p 'test_*.py'
 
 Copy `.env.example` to `.env` for local work. `.env` is ignored by Git.
 
-The deployment workflow reads these GitHub Actions secrets:
+The deployment workflow uses two GitHub Environments so credentials and
+resource names cannot be silently exchanged between AWS accounts:
+
+- `client-production` for the client-owned AWS account,
+- `source-rollback` for the disabled rollback environment.
+
+Configure the following secrets separately in each environment:
 
 | Secret | Purpose |
 | --- | --- |
 | `AWS_ACCESS_KEY_ID` | AWS deployment credentials |
 | `AWS_SECRET_ACCESS_KEY` | AWS deployment credentials |
-| `AWS_REGION` | Deployment region, for example `eu-north-1` |
+| `AWS_SESSION_TOKEN` | Session token for temporary AWS credentials |
 | `PIPELINE_STACK_NAME` | Existing or new CDK pipeline stack name |
 | `BUDGET_STACK_NAME` | Existing or new CDK budget stack name |
 | `BUCKET_NAME` | Existing or new S3 bucket name |
@@ -110,6 +116,7 @@ The deployment workflow reads these GitHub Actions secrets:
 | `MAKE_PUBLIC_FEED` | Keep `false` unless public S3 access is intentional |
 | `ADMIN_USERNAME` | Admin panel username |
 | `ADMIN_PASSWORD` | Admin panel password |
+| `ADMIN_PASSWORD_SHA256` | Existing panel password hash; use instead of `ADMIN_PASSWORD` when migrating |
 | `CLIENT_BRAND_NAME` | Private customer display name |
 | `CLIENT_PANEL_TITLE` | Private admin panel heading |
 | `CLIENT_PANEL_SUBTITLE` | Private admin panel subtitle |
@@ -120,6 +127,20 @@ The deployment workflow reads these GitHub Actions secrets:
 | `CLIENT_LOGO_BASE64` | Private PNG logo encoded as Base64 |
 | `BUDGET_ALERT_EMAIL` | AWS Budget and post-sync audit notification address |
 | `BUDGET_LIMIT_USD` | Monthly budget limit |
+
+Configure these non-secret variables separately in each environment:
+
+| Variable | Purpose |
+| --- | --- |
+| `AWS_REGION` | Application region, normally `eu-north-1` |
+| `EXPECTED_AWS_ACCOUNT_ID` | Account that must match `sts:GetCallerIdentity` |
+| `SYNC_ENABLED` | `false` for a staged or rollback environment; `true` only for the active account |
+| `SCHEDULE_EXPRESSION` | EventBridge expression, normally `cron(0 0,12,17 * * ? *)` |
+| `SCHEDULE_TIMEZONE` | EventBridge timezone, normally `Europe/Warsaw` |
+
+`BUCKET_NAME` is intentionally required and must be globally unique. Keep the
+same value for updates and rollback of one environment, and use a different
+value in the other account.
 
 The deployment is intentionally manual through **Actions → Deploy to AWS →
 Run workflow**. A normal push runs tests and CDK synthesis only.
@@ -182,25 +203,32 @@ dedicated least-privilege role or GitHub OIDC role. The current workflow uses
 2. Confirm that its URL returns the complete XML feed.
 3. Create a BaseLinker API token and identify the target inventory and
    warehouse.
-4. Open the GitHub repository and go to **Settings → Secrets and variables →
-   Actions**.
-5. Add the secrets listed in the configuration table above. At minimum,
-   configure all values validated by the workflow:
-   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
-   `COMARCH_XML_URL`, `BL_API_TOKEN`, `BL_INVENTORY_ID`, `BL_WAREHOUSE_ID`,
-   `ADMIN_USERNAME`, and `ADMIN_PASSWORD`.
+4. Open the GitHub repository and go to **Settings → Environments**.
+5. Create the environment for the target account and add its secrets and
+   variables from the configuration tables above. Use temporary AWS
+   credentials, including `AWS_SESSION_TOKEN`.
 6. Configure `BUDGET_ALERT_EMAIL` and `BUDGET_LIMIT_USD` before enabling
    unattended operation.
 7. Run the normal **CI** workflow and verify that tests, the public repository
    safety check, and CDK synthesis pass.
-8. Open **Actions → Deploy to AWS → Run workflow**.
-9. Enter `DEPLOY` in the confirmation field and start the workflow.
-10. Wait for both CloudFormation stacks to finish successfully.
-11. Confirm the SNS email subscription sent to `BUDGET_ALERT_EMAIL`. Post-sync
+8. Open **Actions → Deploy to AWS → Run workflow**, select the target
+   environment, choose `DIFF`, and enter `DIFF` in the confirmation field.
+9. Review the complete CDK diff. It must show the synchronization schedule and
+   SQS event source disabled and reserved concurrency set to zero when
+   `SYNC_ENABLED=false`.
+10. Run the workflow again with `DEPLOY` only after accepting that diff.
+11. Wait for both CloudFormation stacks to finish successfully.
+12. Confirm the SNS email subscription sent to `BUDGET_ALERT_EMAIL`. Post-sync
     audit alerts are not delivered until this one-time confirmation is complete.
-12. Read the pipeline stack outputs. `AdminUrl` is the administration panel
+13. Read the pipeline stack outputs. `AdminUrl` is the administration panel
     address; the other outputs identify the Lambda, S3 bucket, schedule, and
     SQS continuation queue.
+
+The safe default is `SYNC_ENABLED=false`. A paused deployment has a disabled
+sync schedule, a disabled SQS event source mapping, zero reserved concurrency
+on the sync Lambda, and a disabled monthly budget reset that could otherwise
+re-enable synchronization. Do not change `SYNC_ENABLED` to `true` until the
+source account has been stopped and the cutover checks are complete.
 
 No deployment runs automatically after a push. Only the manually confirmed
 deployment workflow changes AWS resources.

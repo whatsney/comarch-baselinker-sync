@@ -50,6 +50,7 @@ jobs:
             -c region=eu-north-1 \
             -c comarchUrl=https://shop.example.com/xml?id=example \
             -c bucketName=comarch-baselinker-sync-ci-example \
+            -c syncEnabled=false \
             -c blInventoryId=12345 \
             -c blWarehouseId=bl_12345 \
             -c budgetAlertEmail=alerts@example.com \
