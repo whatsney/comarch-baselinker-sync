@@ -17,7 +17,7 @@ from pipeline_stack import ComarchBaseLinkerPipelineStack  # noqa: E402
 def _pipeline_template(sync_enabled: bool) -> Template:
     app = cdk.App(
         context={
-            "comarchUrl": "https://shop.example.com/xml?id=example",
+            "xmlUrl": "https://shop.example.com/xml?id=example",
             "bucketName": "migration-test-bucket",
             "scheduleName": "migration-test-sync-schedule",
             "scheduleExpression": "cron(0 0,12,17 * * ? *)",

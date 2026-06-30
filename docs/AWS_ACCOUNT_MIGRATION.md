@@ -48,8 +48,9 @@ continue when either value is missing, expired, or assigned to the wrong role.
    `SCHEDULE_TIMEZONE=Europe/Warsaw`.
 3. Set a new, explicit, globally unique `BUCKET_NAME`. Do not reuse the source
    bucket name.
-4. Configure only the active Comarch URL, BaseLinker inventory, warehouse,
-   request limit, and token. Do not copy synchronization status or state.
+4. Set `XML_URL` to the active source XML URL, then configure only the
+   BaseLinker inventory, warehouse, request limit, and token. Do not copy
+   synchronization status or state.
 5. Run unit tests, source compilation, repository safety checks, and CDK synth.
 6. Run the deployment workflow with operation `DIFF` and review both stacks.
 7. Confirm that the target template has:
@@ -84,7 +85,7 @@ times.
    SQS message counts are zero.
 4. Keep the source bucket unchanged. Do not copy its objects or source SSM
    status/state parameters.
-5. Re-verify the target Comarch URL, inventory, warehouse, request limit, and
+5. Re-verify the target `XML_URL`, inventory, warehouse, request limit, and
    token path.
 6. Run target `DIFF` with `SYNC_ENABLED=true`. Confirm that only the target
    sync entry points and monthly budget reset move to enabled state.

@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
@@ -384,7 +385,7 @@ class TestMaybeResetStaleSyncState(unittest.TestCase):
 class TestLambdaHandlerStaleResetFlow(unittest.TestCase):
     def _env(self):
         return {
-            "COMARCH_URL": "https://example.com/feed.xml",
+            "XML_URL": "https://example.com/feed.xml",
             "OUTPUT_BUCKET": "bucket",
             "OUTPUT_KEY": "feeds/baselinker/products.xml",
             "BL_INVENTORY_ID": "12345",
@@ -492,6 +493,44 @@ class TestLambdaHandlerStaleResetFlow(unittest.TestCase):
         status_payload = mock_status.call_args_list[-1][0][1]
         self.assertEqual(status_payload.get("status"), "success")
         self.assertIn("diff_total=0", status_payload.get("message", ""))
+
+
+class TestSyncConfigMigration(unittest.TestCase):
+    def test_load_sync_config_accepts_legacy_source_url_keys(self):
+        saved_config = {
+            "comarch_xml_url": "https://legacy.example.com/feed.xml",
+            "bl_inventory_id": 987,
+            "bl_warehouse_id": "bl_987",
+            "bl_api_max_rpm": 55,
+        }
+        with patch.object(lf, "_get_ssm_parameter_string", return_value=json.dumps(saved_config)):
+            config = lf._load_sync_config_from_ssm(
+                parameter_name="/config",
+                default_source_xml_url="https://default.example.com/feed.xml",
+                default_inventory_id=123,
+                default_warehouse_id="bl_123",
+                default_api_max_rpm=90,
+            )
+
+        self.assertEqual(
+            config["source_xml_url"],
+            "https://legacy.example.com/feed.xml",
+        )
+        self.assertNotIn("comarch_xml_url", config)
+
+    def test_primary_xml_url_env_is_used(self):
+        with patch.dict(
+            os.environ,
+            {
+                "XML_URL": "https://primary.example.com/feed.xml",
+                "COMARCH_URL": "https://legacy.example.com/feed.xml",
+            },
+            clear=False,
+        ):
+            self.assertEqual(
+                lf._env_str_from_names(["XML_URL", "COMARCH_URL"]),
+                "https://primary.example.com/feed.xml",
+            )
 
 class TestSqsContinuationHelpers(unittest.TestCase):
     def test_extract_event_payload_from_sqs_record(self):

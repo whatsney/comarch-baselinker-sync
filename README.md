@@ -1,16 +1,21 @@
-# Comarch e-Sklep → BaseLinker Sync
+# XML → BaseLinker Sync
 
-Serverless, audit-driven synchronization of a Comarch e-Sklep product catalog
-with BaseLinker. The project was built for a real-world client deployment after
-the native integration proved too limited for reliable variant relationships,
-stock filtering, repeatable updates, and operational visibility.
+Serverless, audit-driven synchronization of a product catalog exposed as XML
+with BaseLinker. The original production deployment was built for Comarch
+e-Sklep after the native integration proved too limited for reliable variant
+relationships, stock filtering, repeatable updates, and operational visibility.
+
+The synchronization engine is not tied to Comarch itself. Any shop, ERP, PIM,
+or other catalog source can use it when it can publish a compatible HTTPS XML
+feed. This repository includes a ready-to-use Comarch e-Sklep export template
+that generates that normalized XML shape.
 
 No customer data, credentials, catalog exports, account IDs, or deployment
 values are stored in this repository.
 
 ## What it does
 
-- downloads one immutable Comarch XML snapshot per synchronization run,
+- downloads one immutable source XML snapshot per synchronization run,
 - performs a full pre-sync audit against BaseLinker,
 - creates, updates, and deletes only records found in the diff,
 - preserves parent, variant, and standalone-variant relationships,
@@ -28,7 +33,7 @@ values are stored in this repository.
 
 ```mermaid
 flowchart LR
-  C[Comarch XML feed] --> L[AWS Lambda sync]
+  C[Source XML feed] --> L[AWS Lambda sync]
   L --> A[Pre-sync audit]
   A --> B[BaseLinker API]
   L <--> Q[SQS continuation queue]
@@ -50,8 +55,9 @@ flowchart LR
 - `budget_guard_src/` - budget protection Lambda.
 - `tests/` - unit tests.
 - `.github/workflows/` - CI and manual deployment workflows.
-- `comarch_template_full_flat.xml` - Comarch custom comparison template that
-  exports products and all available attributes.
+- `comarch_template_full_flat.xml` - ready-to-use Comarch e-Sklep custom
+  comparison template that generates the normalized XML feed expected by the
+  synchronization runtime.
 
 This is a single monorepo. Infrastructure and runtime code are separated by
 directory, but they are versioned and deployed together. The project uses AWS
@@ -65,6 +71,40 @@ CDK, not the Serverless Framework.
   through the `CLIENT_LOCALE` deployment secret.
 - Customer-specific names, colors, titles, and logos are deployment inputs and
   are not stored in the public repository.
+
+## Source XML feed
+
+The Lambda consumes a simple XML document whose direct children are `item` or
+`product` records. Every record needs a stable `id` or `product_id`; `parent_id`
+links variants to parent products.
+
+Supported fields include:
+
+- identifiers and relationships: `id`, `product_id`, `parent_id`,
+  `parentId`, `ParentId`,
+- product data: `name`, `sku`, `code`, `ean`, `upc`, `quantity`,
+  `stock_quantity`, `price`, `price_gross`, `purchase_price`, `tax_rate`,
+- dimensions and content: `weight`, `width`, `height`, `length`,
+  `description`, `description_extra_1`, `description_extra_2`,
+- taxonomy: `category_name`, `category_path`, `manufacturer_name`, `brand`,
+- media: `image`, `main_image`, `image_url`, `image_extra_1` through
+  `image_extra_15`, or nested `images/image` nodes,
+- attributes: nested `attributes/attribute` nodes with `attribute_name` and
+  `attribute_value`, or `name` and `value`.
+
+For Comarch e-Sklep, paste `comarch_template_full_flat.xml` into a custom
+comparison/export definition and expose the generated XML through a private
+HTTPS URL. The template maps Comarch product fields into the normalized feed
+schema, including product relationships, stock, prices, categories,
+manufacturer, descriptions, dimensions, images, and attributes.
+
+For a non-Comarch source, generate the same XML shape and provide its private
+HTTPS URL through `XML_URL`.
+
+Existing deployments that still define `COMARCH_XML_URL`, `COMARCH_URL`, or
+`comarch_xml_url` continue to work as migration fallbacks. New configuration
+should use `XML_URL`, CDK context `xmlUrl`, and runtime config key
+`source_xml_url`.
 
 ## Local tests
 
@@ -103,7 +143,7 @@ Configure the following secrets separately in each environment:
 | `BUDGET_GUARD_FUNCTION_NAME` | Budget guard Lambda name |
 | `BUDGET_GUARD_MONTHLY_SCHEDULE_NAME` | Monthly reset schedule |
 | `BUDGET_GUARD_HOURLY_SCHEDULE_NAME` | Hourly budget check schedule |
-| `COMARCH_XML_URL` | Private Comarch XML export URL |
+| `XML_URL` | Private compatible source XML URL |
 | `BL_API_TOKEN` | BaseLinker API token |
 | `BL_API_TOKEN_SSM_PARAM` | SecureString parameter path |
 | `BL_SYNC_STATUS_SSM_PARAM` | SSM synchronization status path |
@@ -183,7 +223,8 @@ Before the first deployment, prepare:
 - an AWS account,
 - an IAM identity for deployment,
 - a GitHub repository containing this project,
-- a Comarch e-Sklep custom XML export URL,
+- a private HTTPS source XML feed, or a Comarch e-Sklep custom XML export URL
+  generated with the included template,
 - a BaseLinker API token with access to inventory products, categories,
   manufacturers, and stock,
 - the target BaseLinker inventory ID and warehouse ID,
@@ -205,29 +246,31 @@ dedicated least-privilege role or GitHub OIDC role. The current workflow uses
 
 ## First deployment
 
-1. Create a Comarch custom comparison using
+1. For Comarch e-Sklep, create a custom comparison using
    `comarch_template_full_flat.xml`.
-2. Confirm that its URL returns the complete XML feed.
-3. Create a BaseLinker API token and identify the target inventory and
+2. For another source system, generate an equivalent XML feed using the schema
+   described above.
+3. Confirm that its URL returns the complete XML feed.
+4. Create a BaseLinker API token and identify the target inventory and
    warehouse.
-4. Open the GitHub repository and go to **Settings → Environments**.
-5. Create the environment for the target account and add its secrets and
+5. Open the GitHub repository and go to **Settings → Environments**.
+6. Create the environment for the target account and add its secrets and
    variables from the configuration tables above. Use temporary AWS
    credentials, including `AWS_SESSION_TOKEN`.
-6. Configure `BUDGET_ALERT_EMAIL` and `BUDGET_LIMIT_USD` before enabling
+7. Configure `BUDGET_ALERT_EMAIL` and `BUDGET_LIMIT_USD` before enabling
    unattended operation.
-7. Run the normal **CI** workflow and verify that tests, the public repository
+8. Run the normal **CI** workflow and verify that tests, the public repository
    safety check, and CDK synthesis pass.
-8. Open **Actions → Deploy to AWS → Run workflow**, select the target
+9. Open **Actions → Deploy to AWS → Run workflow**, select the target
    environment, choose `DIFF`, and enter `DIFF` in the confirmation field.
-9. Review the complete CDK diff. It must show the synchronization schedule and
+10. Review the complete CDK diff. It must show the synchronization schedule and
    SQS event source disabled and reserved concurrency set to zero when
    `SYNC_ENABLED=false`.
-10. Run the workflow again with `DEPLOY` only after accepting that diff.
-11. Wait for both CloudFormation stacks to finish successfully.
-12. Confirm the SNS email subscription sent to `BUDGET_ALERT_EMAIL`. Post-sync
+11. Run the workflow again with `DEPLOY` only after accepting that diff.
+12. Wait for both CloudFormation stacks to finish successfully.
+13. Confirm the SNS email subscription sent to `BUDGET_ALERT_EMAIL`. Post-sync
     audit alerts are not delivered until this one-time confirmation is complete.
-13. Read the pipeline stack outputs. `AdminUrl` is the administration panel
+14. Read the pipeline stack outputs. `AdminUrl` is the administration panel
     address; the other outputs identify the Lambda, S3 bucket, schedule, and
     SQS continuation queue.
 
@@ -246,7 +289,7 @@ After the first deployment:
 
 1. Open `AdminUrl` from the pipeline stack outputs.
 2. Sign in using `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
-3. Confirm that the displayed Comarch URL, BaseLinker inventory, warehouse,
+3. Confirm that the displayed source XML URL, BaseLinker inventory, warehouse,
    and request limit are correct.
 4. Confirm in EventBridge Scheduler that the schedule is enabled, uses the
    `Europe/Warsaw` timezone, and runs at 00:00, 12:00, and 17:00 local time.

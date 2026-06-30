@@ -48,7 +48,7 @@ jobs:
           npx --yes aws-cdk@2 synth \
             -c account=111111111111 \
             -c region=eu-north-1 \
-            -c comarchUrl=https://shop.example.com/xml?id=example \
+            -c xmlUrl=https://shop.example.com/xml?id=example \
             -c bucketName=comarch-baselinker-sync-ci-example \
             -c syncEnabled=false \
             -c blInventoryId=12345 \
