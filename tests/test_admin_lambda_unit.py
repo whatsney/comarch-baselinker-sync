@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 import types
@@ -31,6 +32,19 @@ class _FakeScheduler:
             "ScheduleExpression": "cron(0 0,12,17 * * ? *)",
             "ScheduleExpressionTimezone": "Europe/Warsaw",
         }
+
+
+class _FakeSsm:
+    def __init__(self, parameter_value: str = "{}"):
+        self.parameter_value = parameter_value
+        self.last_put = {}
+
+    def get_parameter(self, **_kwargs):
+        return {"Parameter": {"Value": self.parameter_value}}
+
+    def put_parameter(self, **kwargs):
+        self.last_put = kwargs
+        return {"Version": 1}
 
 
 class TestAdminStatusSummary(unittest.TestCase):
@@ -247,6 +261,73 @@ class TestAdminBaseLinkerOptions(unittest.TestCase):
         )
 
         self.assertEqual(warehouse_ids, ["bl_123", "shop_456"])
+
+
+class TestAdminSyncConfigMigration(unittest.TestCase):
+    def test_load_sync_config_accepts_legacy_xml_url_key(self):
+        saved_config = {
+            "comarch_xml_url": "https://legacy.example.com/feed.xml",
+            "bl_inventory_id": 123,
+            "bl_warehouse_id": "bl_123",
+            "bl_api_max_rpm": 80,
+        }
+        fake_ssm = _FakeSsm(json.dumps(saved_config))
+
+        with patch.object(admin, "SYNC_CONFIG_PARAM", "/sync-config"):
+            with patch.object(admin, "DEFAULT_XML_URL", "https://default.example.com/feed.xml"):
+                with patch.object(admin, "ssm", fake_ssm):
+                    config = admin._load_sync_config()
+
+        self.assertEqual(
+            config["source_xml_url"],
+            "https://legacy.example.com/feed.xml",
+        )
+        self.assertNotIn("comarch_xml_url", config)
+
+    def test_save_sync_config_writes_primary_xml_url_key(self):
+        fake_ssm = _FakeSsm()
+
+        with patch.object(admin, "SYNC_CONFIG_PARAM", "/sync-config"):
+            with patch.object(admin, "ssm", fake_ssm):
+                admin._save_sync_config(
+                    {
+                        "source_xml_url": "https://source.example.com/feed.xml",
+                        "bl_inventory_id": 123,
+                        "bl_inventory_name": "Main",
+                        "bl_warehouse_id": "bl_123",
+                        "bl_warehouse_name": "Default",
+                        "bl_api_max_rpm": 80,
+                    }
+                )
+
+        payload = json.loads(fake_ssm.last_put["Value"])
+        self.assertEqual(
+            payload["source_xml_url"],
+            "https://source.example.com/feed.xml",
+        )
+        self.assertNotIn("comarch_xml_url", payload)
+
+    def test_validate_sync_config_accepts_legacy_request_key(self):
+        options = {
+            "inventories": [{"id": 123, "name": "Main", "warehouse_ids": ["bl_123"]}],
+            "warehouses": [{"id": "bl_123", "name": "Default"}],
+        }
+
+        config = admin._validate_sync_config(
+            {
+                "comarch_xml_url": "https://legacy.example.com/feed.xml",
+                "bl_inventory_id": 123,
+                "bl_warehouse_id": "bl_123",
+                "bl_api_max_rpm": 80,
+            },
+            options,
+        )
+
+        self.assertEqual(
+            config["source_xml_url"],
+            "https://legacy.example.com/feed.xml",
+        )
+        self.assertNotIn("comarch_xml_url", config)
 
 
 if __name__ == "__main__":

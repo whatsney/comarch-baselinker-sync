@@ -50,7 +50,13 @@ class ComarchBaseLinkerPipelineStack(Stack):
             return get_context_int(self.node, name, default)
 
         # Deployment identity and user-facing branding.
-        comarch_url = context_text("comarchUrl", required=True)
+        source_xml_url = context_text("xmlUrl")
+        if source_xml_url == "":
+            # Migration fallback for deployments that still pass the old CDK context key.
+            source_xml_url = context_text("comarchUrl")
+        if source_xml_url == "":
+            raise ValueError("Missing required CDK context: xmlUrl")
+
         bucket_name = context_text("bucketName", required=True)
         output_key = context_text("outputKey", "feeds/baselinker/products.xml")
         function_name = context_text("functionName", "comarch-baselinker-sync")
@@ -73,7 +79,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
         )
         admin_username = context_text("adminUsername", "admin")
         admin_password_hash = context_text("adminPasswordHash", required=True)
-        brand_name = context_text("brandName", "Comarch → BaseLinker Sync")
+        brand_name = context_text("brandName", "XML → BaseLinker Sync")
         brand_panel_title = context_text("brandPanelTitle", "Product synchronization")
         brand_panel_subtitle = context_text(
             "brandPanelSubtitle",
@@ -219,14 +225,16 @@ class ComarchBaseLinkerPipelineStack(Stack):
             post_sync_alert_topic = sns.Topic(
                 self,
                 "PostSyncAuditAlertTopic",
-                display_name="Comarch-BaseLinker post-sync audit alerts",
+                display_name="XML-BaseLinker post-sync audit alerts",
             )
             post_sync_alert_topic.add_subscription(
                 sns_subscriptions.EmailSubscription(budget_alert_email)
             )
 
         lambda_env = {
-            "COMARCH_URL": comarch_url,
+            "XML_URL": source_xml_url,
+            # Legacy name kept for one migration window and existing rollback code.
+            "COMARCH_URL": source_xml_url,
             "OUTPUT_BUCKET": bucket.bucket_name,
             "OUTPUT_KEY": output_key,
             "REQUEST_TIMEOUT_SEC": str(request_timeout_sec),
@@ -540,7 +548,9 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 "SYNC_STATUS_PARAM": bl_sync_status_ssm_param,
                 "SYNC_CONFIG_PARAM": bl_sync_config_ssm_param,
                 "SYNC_FUNCTION_NAME": function_name,
-                "DEFAULT_COMARCH_XML_URL": comarch_url,
+                "DEFAULT_XML_URL": source_xml_url,
+                # Legacy name kept for existing deployments during config migration.
+                "DEFAULT_COMARCH_XML_URL": source_xml_url,
                 "DEFAULT_BL_INVENTORY_ID": bl_inventory_id,
                 "DEFAULT_BL_WAREHOUSE_ID": bl_warehouse_id,
                 "DEFAULT_BL_API_MAX_RPM": str(bl_api_max_rpm),

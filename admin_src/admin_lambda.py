@@ -26,7 +26,11 @@ POLAND_TZ = ZoneInfo("Europe/Warsaw")
 STATUS_PARAM = os.getenv("SYNC_STATUS_PARAM", "/comarch-baselinker-sync/push-sync-status")
 SYNC_FUNCTION_NAME = os.getenv("SYNC_FUNCTION_NAME", "comarch-baselinker-sync")
 SYNC_CONFIG_PARAM = os.getenv("SYNC_CONFIG_PARAM", "/comarch-baselinker-sync/sync-config")
-DEFAULT_COMARCH_XML_URL = os.getenv("DEFAULT_COMARCH_XML_URL", "")
+# DEFAULT_COMARCH_XML_URL is accepted only as a migration fallback.
+DEFAULT_XML_URL = os.getenv("DEFAULT_XML_URL", "").strip() or os.getenv(
+    "DEFAULT_COMARCH_XML_URL",
+    "",
+).strip()
 DEFAULT_BL_INVENTORY_ID = os.getenv("DEFAULT_BL_INVENTORY_ID", "")
 DEFAULT_BL_WAREHOUSE_ID = os.getenv("DEFAULT_BL_WAREHOUSE_ID", "")
 DEFAULT_BL_API_MAX_RPM = os.getenv("DEFAULT_BL_API_MAX_RPM", "90")
@@ -44,7 +48,7 @@ BUDGET_LIMIT_USD = os.getenv("BUDGET_LIMIT_USD", "30")
 BUDGET_USD_TO_PLN_RATE = os.getenv("BUDGET_USD_TO_PLN_RATE", "4.00")
 BUDGET_FX_RATE_SSM_PARAM = os.getenv("BUDGET_FX_RATE_SSM_PARAM", "/comarch-baselinker-sync/usd-pln-rate")
 AWS_ACCOUNT_ID = os.getenv("AWS_ACCOUNT_ID", "")
-BRAND_NAME = os.getenv("BRAND_NAME", "Comarch → BaseLinker Sync")
+BRAND_NAME = os.getenv("BRAND_NAME", "XML → BaseLinker Sync")
 BRAND_PANEL_TITLE = os.getenv("BRAND_PANEL_TITLE", "Product synchronization")
 BRAND_PANEL_SUBTITLE = os.getenv(
     "BRAND_PANEL_SUBTITLE",
@@ -111,7 +115,7 @@ TRANSLATIONS = {
         "label_completed": "What was done",
         "label_stages": "Synchronization stages",
         "label_settings": "Synchronization settings",
-        "label_xml": "Comarch e-Sklep XML URL",
+        "label_xml": "Source XML URL",
         "label_inventory": "BaseLinker inventory",
         "label_warehouse": "BaseLinker warehouse",
         "label_rpm": "Requests / min",
@@ -164,7 +168,7 @@ TRANSLATIONS = {
         "queued_pre": "Starting the pre-sync difference calculation.",
         "queued_sync": "Waiting for the difference calculation.",
         "queued_post": "Waiting for synchronization to finish.",
-        "queued_summary": "Synchronization started. Differences between Comarch e-Sklep and BaseLinker will be calculated first.",
+        "queued_summary": "Synchronization started. Differences between the source XML and BaseLinker will be calculated first.",
         "awaiting_status": "Waiting for the first AWS status update.",
         "budget_error": "Could not load the budget: {error}",
         "budget_nbp_rate": " Exchange rate from the last synchronization: NBP{date}, 1 USD = {rate} PLN.",
@@ -235,7 +239,7 @@ TRANSLATIONS = {
         "label_completed": "Co zostało zrobione",
         "label_stages": "Etapy aktualizacji",
         "label_settings": "Ustawienia aktualizacji",
-        "label_xml": "Link do XML z Comarch e-Sklep",
+        "label_xml": "Link do źródłowego XML",
         "label_inventory": "Katalog Baselinker",
         "label_warehouse": "Magazyn Baselinker",
         "label_rpm": "Zapytań / min",
@@ -288,7 +292,7 @@ TRANSLATIONS = {
         "queued_pre": "Uruchamiamy liczenie różnic przed aktualizacją.",
         "queued_sync": "Czeka na wynik liczenia różnic.",
         "queued_post": "Czeka na zakończenie aktualizacji.",
-        "queued_summary": "Aktualizacja została uruchomiona. Najpierw policzymy różnice między Comarch e-Sklep a Baselinkerem.",
+        "queued_summary": "Aktualizacja została uruchomiona. Najpierw policzymy różnice między źródłowym XML a Baselinkerem.",
         "awaiting_status": "Oczekujemy na pierwszy zapis statusu z AWS.",
         "budget_error": "Nie udało się pobrać budżetu: {error}",
         "budget_nbp_rate": " Kurs z ostatniego uruchomienia synchronizacji: NBP{date}, 1 USD = {rate} PLN.",
@@ -407,7 +411,7 @@ def _unauthorized() -> dict:
     return {
         "statusCode": 401,
         "headers": {
-            "WWW-Authenticate": 'Basic realm="Comarch BaseLinker Sync Admin"',
+            "WWW-Authenticate": 'Basic realm="XML BaseLinker Sync Admin"',
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-store",
         },
@@ -600,6 +604,17 @@ def _clean(value: object) -> str:
     return str(value).strip()
 
 
+def _source_xml_url_from_config(config: dict) -> str:
+    # Legacy keys are read so existing SSM config parameters survive the rename.
+    if not isinstance(config, dict):
+        return ""
+    for key in ("source_xml_url", "xml_url", "comarch_xml_url", "comarch_url"):
+        value = _clean(config.get(key))
+        if value != "":
+            return value
+    return ""
+
+
 def _parse_int(value: object, default: int = 0) -> int:
     try:
         return int(str(value).strip())
@@ -762,7 +777,7 @@ def _load_budget_status() -> dict:
 
 def _default_sync_config() -> dict:
     return {
-        "comarch_xml_url": DEFAULT_COMARCH_XML_URL,
+        "source_xml_url": DEFAULT_XML_URL,
         "bl_inventory_id": _parse_int(DEFAULT_BL_INVENTORY_ID, 0),
         "bl_inventory_name": "",
         "bl_warehouse_id": DEFAULT_BL_WAREHOUSE_ID,
@@ -787,9 +802,9 @@ def _load_sync_config() -> dict:
     if not isinstance(saved_config, dict):
         return config
 
-    comarch_xml_url = _clean(saved_config.get("comarch_xml_url"))
-    if comarch_xml_url != "":
-        config["comarch_xml_url"] = comarch_xml_url
+    source_xml_url = _source_xml_url_from_config(saved_config)
+    if source_xml_url != "":
+        config["source_xml_url"] = source_xml_url
 
     inventory_id = _parse_int(saved_config.get("bl_inventory_id"), 0)
     if inventory_id > 0:
@@ -817,7 +832,7 @@ def _load_sync_config() -> dict:
 
 def _save_sync_config(config: dict) -> None:
     payload = {
-        "comarch_xml_url": _clean(config.get("comarch_xml_url")),
+        "source_xml_url": _source_xml_url_from_config(config),
         "bl_inventory_id": int(config.get("bl_inventory_id") or 0),
         "bl_inventory_name": _clean(config.get("bl_inventory_name")),
         "bl_warehouse_id": _clean(config.get("bl_warehouse_id")),
@@ -860,7 +875,7 @@ def _bl_api_call(method: str, parameters: Optional[dict] = None, timeout_sec: in
             "X-BLToken": _get_bl_api_token(),
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
-            "User-Agent": "comarch-baselinker-sync-admin/1.0",
+            "User-Agent": "xml-baselinker-sync-admin/1.0",
         },
         method="POST",
     )
@@ -1020,8 +1035,8 @@ def _request_json(event: dict) -> dict:
 
 
 def _validate_sync_config(requested_config: dict, options: dict) -> dict:
-    comarch_url = _clean(requested_config.get("comarch_xml_url"))
-    if not comarch_url.startswith("https://"):
+    source_xml_url = _source_xml_url_from_config(requested_config)
+    if not source_xml_url.startswith("https://"):
         raise ValueError(_t("validation_https"))
 
     inventory_by_id = {}
@@ -1050,7 +1065,7 @@ def _validate_sync_config(requested_config: dict, options: dict) -> dict:
         raise ValueError(_t("validation_rpm"))
 
     return {
-        "comarch_xml_url": comarch_url,
+        "source_xml_url": source_xml_url,
         "bl_inventory_id": inventory_id,
         "bl_inventory_name": inventory["name"],
         "bl_warehouse_id": warehouse_id,
@@ -1732,8 +1747,8 @@ def _page() -> str:
         <div class="label">__LABEL_SETTINGS__</div>
         <div class="config-grid">
           <div class="field">
-            <label for="comarchUrlInput">__LABEL_XML__</label>
-            <input id="comarchUrlInput" type="url" placeholder="https://...">
+            <label for="xmlUrlInput">__LABEL_XML__</label>
+            <input id="xmlUrlInput" type="url" placeholder="https://...">
           </div>
           <div class="field">
             <label for="inventorySelect">__LABEL_INVENTORY__</label>
@@ -1770,7 +1785,7 @@ def _page() -> str:
     const runText = document.getElementById('runText');
     const stepsList = document.getElementById('stepsList');
     const summaryText = document.getElementById('summaryText');
-    const comarchUrlInput = document.getElementById('comarchUrlInput');
+    const xmlUrlInput = document.getElementById('xmlUrlInput');
     const inventorySelect = document.getElementById('inventorySelect');
     const warehouseSelect = document.getElementById('warehouseSelect');
     const rpmInput = document.getElementById('rpmInput');
@@ -2106,7 +2121,7 @@ def _page() -> str:
         if (!res.ok) throw new Error(data.message || translate('config_load_http', { status: res.status }));
         const config = data.config || {};
         configOptions = data.options || { inventories: [], warehouses: [] };
-        comarchUrlInput.value = config.comarch_xml_url || '';
+        xmlUrlInput.value = config.source_xml_url || config.xml_url || config.comarch_xml_url || '';
         rpmInput.value = config.bl_api_max_rpm || 90;
         fillSelect(inventorySelect, configOptions.inventories || [], config.bl_inventory_id, translate('empty_inventories'));
         refreshWarehouseOptions(config.bl_warehouse_id);
@@ -2121,7 +2136,7 @@ def _page() -> str:
 
     function collectConfig() {
       return {
-        comarch_xml_url: comarchUrlInput.value.trim(),
+        source_xml_url: xmlUrlInput.value.trim(),
         bl_inventory_id: Number(inventorySelect.value || 0),
         bl_warehouse_id: warehouseSelect.value,
         bl_api_max_rpm: Number(rpmInput.value || 90)

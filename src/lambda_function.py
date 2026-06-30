@@ -156,7 +156,7 @@ def _collect_images(product_element: ET.Element) -> List[str]:
         if image_url != "":
             image_candidates.append(image_url)
 
-    # BaseLinker should receive each image once even if Comarch exposes the
+    # BaseLinker should receive each image once even if the source feed exposes the
     # same URL through the main image and the extra-images collection.
     return _unique_nonempty(image_candidates)
 
@@ -316,7 +316,7 @@ def _build_relationships(
 def _download(url: str, timeout_sec: int, retries: int = 3) -> bytes:
     last_error: Optional[Exception] = None
     headers = {
-        "User-Agent": "comarch-bl-pipeline/1.0",
+        "User-Agent": "xml-baselinker-sync/1.0",
         "Accept": "application/xml,text/xml,*/*",
     }
 
@@ -367,6 +367,14 @@ def _env_str(name: str, default: str = "") -> str:
     if raw_value is None:
         return default
     return str(raw_value).strip()
+
+
+def _env_str_from_names(names: List[str], default: str = "") -> str:
+    for name in names:
+        value = _env_str(name)
+        if value != "":
+            return value
+    return default
 
 
 def _post_audit_issue_details(sync_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -477,7 +485,7 @@ def _publish_post_audit_alert(
     try:
         response = sns_api.publish(
             TopicArn=notification_topic_arn,
-            Subject="Comarch-BaseLinker sync: post-sync audit alert",
+            Subject="XML-BaseLinker sync: post-sync audit alert",
             Message=message,
         )
     except Exception as exc:
@@ -764,7 +772,7 @@ def _refresh_budget_fx_rate_ssm(
             _clean(nbp_url) or DEFAULT_NBP_USD_PLN_URL,
             headers={
                 "Accept": "application/json",
-                "User-Agent": "comarch-baselinker-sync/1.0",
+                "User-Agent": "xml-baselinker-sync/1.0",
             },
             method="GET",
         )
@@ -911,15 +919,26 @@ def _get_ssm_parameter_string(parameter_name: str) -> str:
     raise RuntimeError(f"SSM parameter '{name}' is missing or empty.")
 
 
+def _source_xml_url_from_config(config: Dict[str, Any]) -> str:
+    # Legacy keys are read so existing SSM config parameters survive the rename.
+    if not isinstance(config, dict):
+        return ""
+    for key in ("source_xml_url", "xml_url", "comarch_xml_url", "comarch_url"):
+        value = _clean(config.get(key))
+        if value != "":
+            return value
+    return ""
+
+
 def _load_sync_config_from_ssm(
     parameter_name: str,
-    default_comarch_url: str,
+    default_source_xml_url: str,
     default_inventory_id: int,
     default_warehouse_id: str,
     default_api_max_rpm: int,
 ) -> Dict[str, Any]:
     config = {
-        "comarch_xml_url": _clean(default_comarch_url),
+        "source_xml_url": _clean(default_source_xml_url),
         "bl_inventory_id": int(default_inventory_id or 0),
         "bl_inventory_name": "",
         "bl_warehouse_id": _clean(default_warehouse_id),
@@ -938,11 +957,9 @@ def _load_sync_config_from_ssm(
     if not isinstance(parsed, dict):
         return config
 
-    comarch_url = _clean(
-        parsed.get("comarch_xml_url", parsed.get("comarch_url", ""))
-    )
-    if comarch_url != "":
-        config["comarch_xml_url"] = comarch_url
+    source_xml_url = _source_xml_url_from_config(parsed)
+    if source_xml_url != "":
+        config["source_xml_url"] = source_xml_url
     try:
         inventory_id = int(parsed.get("bl_inventory_id", parsed.get("inventory_id", 0)) or 0)
     except Exception:
@@ -968,7 +985,7 @@ def _load_sync_config_from_ssm(
 
 def _sync_config_digest(config: Dict[str, Any]) -> str:
     comparable = {
-        "comarch_xml_url": _clean(config.get("comarch_xml_url", "")),
+        "source_xml_url": _source_xml_url_from_config(config),
         "bl_inventory_id": int(config.get("bl_inventory_id", 0) or 0),
         "bl_warehouse_id": _clean(config.get("bl_warehouse_id", "")),
         "bl_api_max_rpm": int(config.get("bl_api_max_rpm", DEFAULT_BL_API_MAX_RPM) or DEFAULT_BL_API_MAX_RPM),
@@ -1160,7 +1177,7 @@ def _bl_api_call(
         "X-BLToken": api_token,
         "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/json",
-        "User-Agent": "comarch-baselinker-sync/1.0",
+        "User-Agent": "xml-baselinker-sync/1.0",
     }
 
     last_error: Optional[Exception] = None
@@ -4270,7 +4287,12 @@ def _extract_event_payload(event: Any) -> Tuple[Dict[str, Any], str]:
 
 
 def lambda_handler(event, context):
-    default_comarch_url = os.environ["COMARCH_URL"]
+    # COMARCH_* names are legacy deployment fallbacks; XML_URL is the primary name.
+    default_source_xml_url = _env_str_from_names(
+        ["XML_URL", "COMARCH_URL", "COMARCH_XML_URL"]
+    )
+    if default_source_xml_url == "":
+        raise RuntimeError("XML_URL must be configured.")
     output_bucket = os.environ["OUTPUT_BUCKET"]
     output_key = os.getenv("OUTPUT_KEY", "feeds/baselinker/products.xml")
     timeout_sec = _env_int("REQUEST_TIMEOUT_SEC", 180)
@@ -4288,13 +4310,15 @@ def lambda_handler(event, context):
     default_bl_api_max_rpm = _env_int("BL_API_MAX_RPM", DEFAULT_BL_API_MAX_RPM)
     active_sync_config = _load_sync_config_from_ssm(
         parameter_name=sync_config_param,
-        default_comarch_url=default_comarch_url,
+        default_source_xml_url=default_source_xml_url,
         default_inventory_id=default_bl_inventory_id,
         default_warehouse_id=default_bl_warehouse_id,
         default_api_max_rpm=default_bl_api_max_rpm,
     )
     active_sync_config_digest = _sync_config_digest(active_sync_config)
-    comarch_url = _clean(active_sync_config.get("comarch_xml_url", default_comarch_url))
+    source_xml_url = _source_xml_url_from_config(active_sync_config)
+    if source_xml_url == "":
+        source_xml_url = default_source_xml_url
     bl_inventory_id = int(active_sync_config.get("bl_inventory_id", 0) or 0)
     bl_warehouse_id = _clean(active_sync_config.get("bl_warehouse_id", ""))
     bl_api_max_rpm = int(active_sync_config.get("bl_api_max_rpm", default_bl_api_max_rpm) or default_bl_api_max_rpm)
@@ -4568,7 +4592,7 @@ def lambda_handler(event, context):
                 source_fetch_mode = "snapshot_missing_fallback_live_download"
 
         if source_xml is None:
-            source_xml = _download(comarch_url, timeout_sec=timeout_sec)
+            source_xml = _download(source_xml_url, timeout_sec=timeout_sec)
             if source_live_digest_hint == "":
                 source_live_digest_hint = hashlib.sha1(source_xml).hexdigest()
 
