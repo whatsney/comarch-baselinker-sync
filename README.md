@@ -361,6 +361,22 @@ automatic destroy workflow.
 Never run `cdk destroy` against a customer environment without reviewing the
 target account, region, stack names, and retained data first.
 
+Use `scripts/teardown_aws_account.py` for reviewed removals. It runs in dry-run
+mode unless `--apply` and a matching `--confirm-account-id` are provided.
+
+```bash
+python scripts/teardown_aws_account.py \
+  --profile migration-client \
+  --expected-account-id 123456789012 \
+  --pipeline-stack-name ComarchBaseLinkerSyncStack \
+  --budget-stack-name ComarchBaseLinkerBudgetStack \
+  --retained-bucket-name comarch-baselinker-sync-123456789012-eu-north-1
+```
+
+Add `--delete-cdk-bootstrap` only when the account has no other CDK deployments.
+Use `--iam-user-name`, `--iam-role-name`, and `--final-assume-role-arn` only for
+final account cleanup after the application resources are gone.
+
 ## Troubleshooting
 
 ### CDK bootstrap or deployment is denied
