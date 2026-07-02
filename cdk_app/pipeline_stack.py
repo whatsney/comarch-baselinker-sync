@@ -27,7 +27,7 @@ from context_values import get_context_bool, get_context_int, get_context_text
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-class ComarchBaseLinkerPipelineStack(Stack):
+class BaseLinkerSyncPipelineStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -52,19 +52,16 @@ class ComarchBaseLinkerPipelineStack(Stack):
         # Deployment identity and user-facing branding.
         source_xml_url = context_text("xmlUrl")
         if source_xml_url == "":
-            # Migration fallback for deployments that still pass the old CDK context key.
-            source_xml_url = context_text("comarchUrl")
-        if source_xml_url == "":
             raise ValueError("Missing required CDK context: xmlUrl")
 
         bucket_name = context_text("bucketName", required=True)
         output_key = context_text("outputKey", "feeds/baselinker/products.xml")
-        function_name = context_text("functionName", "comarch-baselinker-sync")
+        function_name = context_text("functionName", "baselinker-sync")
         continuation_queue_name = context_text("continuationQueueName", "")
         lambda_function_arn = (
             f"arn:aws:lambda:{self.region}:{self.account}:function:{function_name}"
         )
-        schedule_name = context_text("scheduleName", "comarch-baselinker-sync-midnight")
+        schedule_name = context_text("scheduleName", "baselinker-sync-midnight")
         schedule_expression = context_text(
             "scheduleExpression",
             "cron(0 0,12,17 * * ? *)",
@@ -72,10 +69,10 @@ class ComarchBaseLinkerPipelineStack(Stack):
         schedule_timezone = context_text("scheduleTimezone", "Europe/Warsaw")
         sync_enabled = context_bool("syncEnabled", False)
         sync_resource_state = "ENABLED" if sync_enabled else "DISABLED"
-        admin_api_name = context_text("adminApiName", "comarch-baselinker-sync-admin-api")
+        admin_api_name = context_text("adminApiName", "baselinker-sync-admin-api")
         admin_function_name = context_text(
             "adminFunctionName",
-            "comarch-baselinker-sync-admin",
+            "baselinker-sync-admin",
         )
         admin_username = context_text("adminUsername", "admin")
         admin_password_hash = context_text("adminPasswordHash", required=True)
@@ -92,33 +89,33 @@ class ComarchBaseLinkerPipelineStack(Stack):
         brand_primary_dark_color = context_text("brandPrimaryDarkColor", "#0f5d96")
         brand_secondary_color = context_text("brandSecondaryColor", "#183c5c")
         brand_logo_enabled = context_bool("brandLogoEnabled", False)
-        budget_name = context_text("budgetName", "comarch-baselinker-sync-monthly-budget")
+        budget_name = context_text("budgetName", "baselinker-sync-monthly-budget")
         budget_alert_email = context_text("budgetAlertEmail", "").strip()
         budget_limit_usd = context_text("budgetLimitUsd", "30")
         budget_usd_to_pln_rate = context_text("budgetUsdToPlnRate", "4.00")
         budget_fx_rate_ssm_param = context_text(
             "budgetFxRateSsmParam",
-            "/comarch-baselinker-sync/usd-pln-rate",
+            "/baselinker-sync/usd-pln-rate",
         )
         budget_guard_function_name = context_text(
             "budgetGuardFunctionName",
-            "comarch-baselinker-budget-guard",
+            "baselinker-budget-guard",
         )
         budget_guard_monthly_schedule_name = context_text(
             "budgetGuardMonthlyScheduleName",
-            "comarch-baselinker-budget-guard-monthly-enable",
+            "baselinker-budget-guard-monthly-enable",
         )
         budget_guard_hourly_schedule_name = context_text(
             "budgetGuardHourlyScheduleName",
-            "comarch-baselinker-budget-guard-hourly-check",
+            "baselinker-budget-guard-hourly-check",
         )
         budget_guard_status_ssm_param = context_text(
             "budgetGuardStatusSsmParam",
-            "/comarch-baselinker-sync/budget-guard-status",
+            "/baselinker-sync/budget-guard-status",
         )
         bl_api_token_ssm_param = context_text(
             "blApiTokenSsmParam",
-            "/comarch-baselinker-sync/api-token",
+            "/baselinker-sync/api-token",
         )
 
         # Runtime tuning and BaseLinker target configuration.
@@ -167,11 +164,11 @@ class ComarchBaseLinkerPipelineStack(Stack):
         )
         bl_sync_status_ssm_param = context_text(
             "blSyncStatusSsmParam",
-            "/comarch-baselinker-sync/push-sync-status",
+            "/baselinker-sync/push-sync-status",
         )
         bl_sync_config_ssm_param = context_text(
             "blSyncConfigSsmParam",
-            "/comarch-baselinker-sync/sync-config",
+            "/baselinker-sync/sync-config",
         )
         bl_continuation_blocked_min_delay_sec = context_int(
             "blContinuationBlockedMinDelaySec", 65
@@ -233,8 +230,6 @@ class ComarchBaseLinkerPipelineStack(Stack):
 
         lambda_env = {
             "XML_URL": source_xml_url,
-            # Legacy name kept for one migration window and existing rollback code.
-            "COMARCH_URL": source_xml_url,
             "OUTPUT_BUCKET": bucket.bucket_name,
             "OUTPUT_KEY": output_key,
             "REQUEST_TIMEOUT_SEC": str(request_timeout_sec),
@@ -447,7 +442,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             self,
             "SchedulerInvokeRole",
             assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
-            description="Execution role for EventBridge Scheduler to invoke Comarch-BaseLinker sync Lambda",
+            description="Execution role for EventBridge Scheduler to invoke XML to BaseLinker sync Lambda",
         )
         scheduler_role.add_to_policy(
             iam.PolicyStatement(
@@ -481,7 +476,7 @@ class ComarchBaseLinkerPipelineStack(Stack):
             self,
             "BudgetGuardSchedulerInvokeRole",
             assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
-            description="Execution role for EventBridge Scheduler to re-enable Comarch-BaseLinker sync monthly",
+            description="Execution role for EventBridge Scheduler to re-enable XML to BaseLinker sync monthly",
         )
         budget_guard_scheduler_role.add_to_policy(
             iam.PolicyStatement(
@@ -549,8 +544,6 @@ class ComarchBaseLinkerPipelineStack(Stack):
                 "SYNC_CONFIG_PARAM": bl_sync_config_ssm_param,
                 "SYNC_FUNCTION_NAME": function_name,
                 "DEFAULT_XML_URL": source_xml_url,
-                # Legacy name kept for existing deployments during config migration.
-                "DEFAULT_COMARCH_XML_URL": source_xml_url,
                 "DEFAULT_BL_INVENTORY_ID": bl_inventory_id,
                 "DEFAULT_BL_WAREHOUSE_ID": bl_warehouse_id,
                 "DEFAULT_BL_API_MAX_RPM": str(bl_api_max_rpm),

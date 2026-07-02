@@ -52,8 +52,7 @@ jobs:
       BUDGET_GUARD_FUNCTION_NAME: ${{ secrets.BUDGET_GUARD_FUNCTION_NAME }}
       BUDGET_GUARD_MONTHLY_SCHEDULE_NAME: ${{ secrets.BUDGET_GUARD_MONTHLY_SCHEDULE_NAME }}
       BUDGET_GUARD_HOURLY_SCHEDULE_NAME: ${{ secrets.BUDGET_GUARD_HOURLY_SCHEDULE_NAME }}
-      # COMARCH_XML_URL remains accepted as a legacy secret fallback.
-      XML_URL: ${{ secrets.XML_URL || secrets.COMARCH_XML_URL }}
+      XML_URL: ${{ secrets.XML_URL }}
       BL_API_TOKEN: ${{ secrets.BL_API_TOKEN }}
       BL_API_TOKEN_SSM_PARAM: ${{ secrets.BL_API_TOKEN_SSM_PARAM }}
       BL_SYNC_STATUS_SSM_PARAM: ${{ secrets.BL_SYNC_STATUS_SSM_PARAM }}
@@ -140,11 +139,11 @@ jobs:
           fi
           SCHEDULE_EXPRESSION_VALUE="${SCHEDULE_EXPRESSION:-cron(0 0,12,17 * * ? *)}"
           SCHEDULE_TIMEZONE_VALUE="${SCHEDULE_TIMEZONE:-Europe/Warsaw}"
-          TOKEN_PARAM="${BL_API_TOKEN_SSM_PARAM:-/comarch-baselinker-sync/api-token}"
-          STATUS_PARAM="${BL_SYNC_STATUS_SSM_PARAM:-/comarch-baselinker-sync/push-sync-status}"
-          CONFIG_PARAM="${BL_SYNC_CONFIG_SSM_PARAM:-/comarch-baselinker-sync/sync-config}"
-          FX_PARAM="${BUDGET_FX_RATE_SSM_PARAM:-/comarch-baselinker-sync/usd-pln-rate}"
-          GUARD_PARAM="${BUDGET_GUARD_STATUS_SSM_PARAM:-/comarch-baselinker-sync/budget-guard-status}"
+          TOKEN_PARAM="${BL_API_TOKEN_SSM_PARAM:-/baselinker-sync/api-token}"
+          STATUS_PARAM="${BL_SYNC_STATUS_SSM_PARAM:-/baselinker-sync/push-sync-status}"
+          CONFIG_PARAM="${BL_SYNC_CONFIG_SSM_PARAM:-/baselinker-sync/sync-config}"
+          FX_PARAM="${BUDGET_FX_RATE_SSM_PARAM:-/baselinker-sync/usd-pln-rate}"
+          GUARD_PARAM="${BUDGET_GUARD_STATUS_SSM_PARAM:-/baselinker-sync/budget-guard-status}"
           RPM="${BL_API_MAX_RPM:-90}"
           LIMIT="${BUDGET_LIMIT_USD:-30}"
           PUBLIC_FEED="${MAKE_PUBLIC_FEED:-false}"
@@ -168,7 +167,7 @@ jobs:
           else
             PASSWORD_HASH="$(python -c 'import hashlib,os; print(hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest())')"
           fi
-          EFFECTIVE_BUCKET_NAME="${BUCKET_NAME:-comarch-baselinker-sync-${ACCOUNT_ID}-${AWS_REGION}}"
+          EFFECTIVE_BUCKET_NAME="${BUCKET_NAME:-baselinker-sync-${ACCOUNT_ID}-${AWS_REGION}}"
           for value in "$BRAND_NAME" "$PANEL_TITLE" "$PANEL_SUBTITLE" \
             "$PRIMARY_COLOR" "$PRIMARY_DARK_COLOR" "$SECONDARY_COLOR"; do
             echo "::add-mask::$value"
@@ -178,17 +177,17 @@ jobs:
             echo "SYNC_ENABLED_EFFECTIVE=$SYNC_ENABLED_VALUE"
             echo "SCHEDULE_EXPRESSION_EFFECTIVE=$SCHEDULE_EXPRESSION_VALUE"
             echo "SCHEDULE_TIMEZONE_EFFECTIVE=$SCHEDULE_TIMEZONE_VALUE"
-            echo "PIPELINE_STACK_NAME_EFFECTIVE=${PIPELINE_STACK_NAME:-ComarchBaseLinkerSyncStack}"
-            echo "BUDGET_STACK_NAME_EFFECTIVE=${BUDGET_STACK_NAME:-ComarchBaseLinkerBudgetStack}"
+            echo "PIPELINE_STACK_NAME_EFFECTIVE=${PIPELINE_STACK_NAME:-BaseLinkerSyncStack}"
+            echo "BUDGET_STACK_NAME_EFFECTIVE=${BUDGET_STACK_NAME:-BaseLinkerBudgetStack}"
             echo "BUCKET_NAME_EFFECTIVE=$EFFECTIVE_BUCKET_NAME"
-            echo "FUNCTION_NAME_EFFECTIVE=${FUNCTION_NAME:-comarch-baselinker-sync}"
-            echo "SCHEDULE_NAME_EFFECTIVE=${SCHEDULE_NAME:-comarch-baselinker-sync-midnight}"
-            echo "ADMIN_API_NAME_EFFECTIVE=${ADMIN_API_NAME:-comarch-baselinker-sync-admin-api}"
-            echo "ADMIN_FUNCTION_NAME_EFFECTIVE=${ADMIN_FUNCTION_NAME:-comarch-baselinker-sync-admin}"
-            echo "BUDGET_NAME_EFFECTIVE=${BUDGET_NAME:-comarch-baselinker-sync-monthly-budget}"
-            echo "BUDGET_GUARD_FUNCTION_NAME_EFFECTIVE=${BUDGET_GUARD_FUNCTION_NAME:-comarch-baselinker-budget-guard}"
-            echo "BUDGET_GUARD_MONTHLY_SCHEDULE_NAME_EFFECTIVE=${BUDGET_GUARD_MONTHLY_SCHEDULE_NAME:-comarch-baselinker-budget-guard-monthly-enable}"
-            echo "BUDGET_GUARD_HOURLY_SCHEDULE_NAME_EFFECTIVE=${BUDGET_GUARD_HOURLY_SCHEDULE_NAME:-comarch-baselinker-budget-guard-hourly-check}"
+            echo "FUNCTION_NAME_EFFECTIVE=${FUNCTION_NAME:-baselinker-sync}"
+            echo "SCHEDULE_NAME_EFFECTIVE=${SCHEDULE_NAME:-baselinker-sync-midnight}"
+            echo "ADMIN_API_NAME_EFFECTIVE=${ADMIN_API_NAME:-baselinker-sync-admin-api}"
+            echo "ADMIN_FUNCTION_NAME_EFFECTIVE=${ADMIN_FUNCTION_NAME:-baselinker-sync-admin}"
+            echo "BUDGET_NAME_EFFECTIVE=${BUDGET_NAME:-baselinker-sync-monthly-budget}"
+            echo "BUDGET_GUARD_FUNCTION_NAME_EFFECTIVE=${BUDGET_GUARD_FUNCTION_NAME:-baselinker-budget-guard}"
+            echo "BUDGET_GUARD_MONTHLY_SCHEDULE_NAME_EFFECTIVE=${BUDGET_GUARD_MONTHLY_SCHEDULE_NAME:-baselinker-budget-guard-monthly-enable}"
+            echo "BUDGET_GUARD_HOURLY_SCHEDULE_NAME_EFFECTIVE=${BUDGET_GUARD_HOURLY_SCHEDULE_NAME:-baselinker-budget-guard-hourly-check}"
             echo "BL_API_TOKEN_SSM_PARAM_EFFECTIVE=$TOKEN_PARAM"
             echo "BL_SYNC_STATUS_SSM_PARAM_EFFECTIVE=$STATUS_PARAM"
             echo "BL_SYNC_CONFIG_SSM_PARAM_EFFECTIVE=$CONFIG_PARAM"

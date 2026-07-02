@@ -263,10 +263,10 @@ class TestAdminBaseLinkerOptions(unittest.TestCase):
         self.assertEqual(warehouse_ids, ["bl_123", "shop_456"])
 
 
-class TestAdminSyncConfigMigration(unittest.TestCase):
-    def test_load_sync_config_accepts_legacy_xml_url_key(self):
+class TestAdminSyncConfig(unittest.TestCase):
+    def test_load_sync_config_accepts_primary_xml_url_key(self):
         saved_config = {
-            "comarch_xml_url": "https://legacy.example.com/feed.xml",
+            "source_xml_url": "https://source.example.com/feed.xml",
             "bl_inventory_id": 123,
             "bl_warehouse_id": "bl_123",
             "bl_api_max_rpm": 80,
@@ -280,9 +280,8 @@ class TestAdminSyncConfigMigration(unittest.TestCase):
 
         self.assertEqual(
             config["source_xml_url"],
-            "https://legacy.example.com/feed.xml",
+            "https://source.example.com/feed.xml",
         )
-        self.assertNotIn("comarch_xml_url", config)
 
     def test_save_sync_config_writes_primary_xml_url_key(self):
         fake_ssm = _FakeSsm()
@@ -305,9 +304,17 @@ class TestAdminSyncConfigMigration(unittest.TestCase):
             payload["source_xml_url"],
             "https://source.example.com/feed.xml",
         )
-        self.assertNotIn("comarch_xml_url", payload)
+        expected_config_keys = {
+            "source_xml_url",
+            "bl_inventory_id",
+            "bl_inventory_name",
+            "bl_warehouse_id",
+            "bl_warehouse_name",
+            "bl_api_max_rpm",
+        }
+        self.assertTrue(expected_config_keys.issubset(payload))
 
-    def test_validate_sync_config_accepts_legacy_request_key(self):
+    def test_validate_sync_config_accepts_short_xml_url_key(self):
         options = {
             "inventories": [{"id": 123, "name": "Main", "warehouse_ids": ["bl_123"]}],
             "warehouses": [{"id": "bl_123", "name": "Default"}],
@@ -315,7 +322,7 @@ class TestAdminSyncConfigMigration(unittest.TestCase):
 
         config = admin._validate_sync_config(
             {
-                "comarch_xml_url": "https://legacy.example.com/feed.xml",
+                "xml_url": "https://source.example.com/feed.xml",
                 "bl_inventory_id": 123,
                 "bl_warehouse_id": "bl_123",
                 "bl_api_max_rpm": 80,
@@ -325,9 +332,8 @@ class TestAdminSyncConfigMigration(unittest.TestCase):
 
         self.assertEqual(
             config["source_xml_url"],
-            "https://legacy.example.com/feed.xml",
+            "https://source.example.com/feed.xml",
         )
-        self.assertNotIn("comarch_xml_url", config)
 
 
 if __name__ == "__main__":

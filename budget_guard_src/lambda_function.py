@@ -16,17 +16,17 @@ budgets = boto3.client("budgets", region_name="us-east-1")
 
 
 SYNC_FUNCTION_NAME = os.getenv("SYNC_FUNCTION_NAME") or os.getenv(
-    "TARGET_FUNCTION_NAME", "comarch-baselinker-sync"
+    "TARGET_FUNCTION_NAME", "baselinker-sync"
 )
 SYNC_SCHEDULE_NAME = os.getenv("SYNC_SCHEDULE_NAME") or os.getenv(
-    "SCHEDULE_NAME", "comarch-baselinker-sync-midnight"
+    "SCHEDULE_NAME", "baselinker-sync-midnight"
 )
 SYNC_SCHEDULE_GROUP = os.getenv("SYNC_SCHEDULE_GROUP") or os.getenv("SCHEDULE_GROUP", "default")
 CONTINUATION_QUEUE_ARN = os.getenv("CONTINUATION_QUEUE_ARN", "")
 TARGET_RESERVED_CONCURRENCY = int(os.getenv("TARGET_RESERVED_CONCURRENCY", "1") or "1")
-STATUS_PARAM = os.getenv("BUDGET_GUARD_STATUS_PARAM", "/comarch-baselinker-sync/budget-guard-status")
+STATUS_PARAM = os.getenv("BUDGET_GUARD_STATUS_PARAM", "/baselinker-sync/budget-guard-status")
 AWS_ACCOUNT_ID = os.getenv("AWS_ACCOUNT_ID", "")
-BUDGET_NAME = os.getenv("BUDGET_NAME", "comarch-baselinker-sync-monthly-budget")
+BUDGET_NAME = os.getenv("BUDGET_NAME", "baselinker-sync-monthly-budget")
 BUDGET_LIMIT_USD = float(os.getenv("BUDGET_LIMIT_USD", "30") or "30")
 
 

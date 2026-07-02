@@ -12,22 +12,22 @@ from botocore.exceptions import BotoCoreError, ClientError, WaiterError
 
 DEFAULT_APP_REGION = "eu-north-1"
 DEFAULT_BUDGET_REGION = "us-east-1"
-DEFAULT_PIPELINE_STACK_NAME = "ComarchBaseLinkerSyncStack"
-DEFAULT_BUDGET_STACK_NAME = "ComarchBaseLinkerBudgetStack"
+DEFAULT_PIPELINE_STACK_NAME = "BaseLinkerSyncStack"
+DEFAULT_BUDGET_STACK_NAME = "BaseLinkerBudgetStack"
 DEFAULT_CDK_BOOTSTRAP_STACK_NAME = "CDKToolkit"
 DEFAULT_CDK_QUALIFIER = "hnb659fds"
-DEFAULT_BUDGET_NAME = "comarch-baselinker-sync-monthly-budget"
+DEFAULT_BUDGET_NAME = "baselinker-sync-monthly-budget"
 DEFAULT_FUNCTION_NAMES = (
-    "comarch-baselinker-sync",
-    "comarch-baselinker-sync-admin",
-    "comarch-baselinker-budget-guard",
+    "baselinker-sync",
+    "baselinker-sync-admin",
+    "baselinker-budget-guard",
 )
 DEFAULT_SSM_PARAMETER_NAMES = (
-    "/comarch-baselinker-sync/api-token",
-    "/comarch-baselinker-sync/push-sync-status",
-    "/comarch-baselinker-sync/sync-config",
-    "/comarch-baselinker-sync/usd-pln-rate",
-    "/comarch-baselinker-sync/budget-guard-status",
+    "/baselinker-sync/api-token",
+    "/baselinker-sync/push-sync-status",
+    "/baselinker-sync/sync-config",
+    "/baselinker-sync/usd-pln-rate",
+    "/baselinker-sync/budget-guard-status",
 )
 
 

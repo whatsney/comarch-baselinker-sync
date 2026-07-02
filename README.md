@@ -101,10 +101,8 @@ manufacturer, descriptions, dimensions, images, and attributes.
 For a non-Comarch source, generate the same XML shape and provide its private
 HTTPS URL through `XML_URL`.
 
-Existing deployments that still define `COMARCH_XML_URL`, `COMARCH_URL`, or
-`comarch_xml_url` continue to work as migration fallbacks. New configuration
-should use `XML_URL`, CDK context `xmlUrl`, and runtime config key
-`source_xml_url`.
+Configuration should use `XML_URL`, CDK context `xmlUrl`, and runtime config
+key `source_xml_url`.
 
 ## Local tests
 
@@ -368,9 +366,9 @@ mode unless `--apply` and a matching `--confirm-account-id` are provided.
 python scripts/teardown_aws_account.py \
   --profile migration-client \
   --expected-account-id 123456789012 \
-  --pipeline-stack-name ComarchBaseLinkerSyncStack \
-  --budget-stack-name ComarchBaseLinkerBudgetStack \
-  --retained-bucket-name comarch-baselinker-sync-123456789012-eu-north-1
+  --pipeline-stack-name BaseLinkerSyncStack \
+  --budget-stack-name BaseLinkerBudgetStack \
+  --retained-bucket-name baselinker-sync-123456789012-eu-north-1
 ```
 
 Add `--delete-cdk-bootstrap` only when the account has no other CDK deployments.

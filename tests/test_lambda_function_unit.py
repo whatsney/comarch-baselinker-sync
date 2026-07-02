@@ -62,8 +62,8 @@ class _FailingSNS:
 
 class _Ctx:
     aws_request_id = "req-1"
-    invoked_function_arn = "arn:aws:lambda:eu-north-1:111111111111:function:comarch-baselinker-sync"
-    function_name = "comarch-baselinker-sync"
+    invoked_function_arn = "arn:aws:lambda:eu-north-1:111111111111:function:baselinker-sync"
+    function_name = "baselinker-sync"
 
     @staticmethod
     def get_remaining_time_in_millis():
@@ -495,10 +495,10 @@ class TestLambdaHandlerStaleResetFlow(unittest.TestCase):
         self.assertIn("diff_total=0", status_payload.get("message", ""))
 
 
-class TestSyncConfigMigration(unittest.TestCase):
-    def test_load_sync_config_accepts_legacy_source_url_keys(self):
+class TestSyncConfig(unittest.TestCase):
+    def test_load_sync_config_accepts_primary_source_url_key(self):
         saved_config = {
-            "comarch_xml_url": "https://legacy.example.com/feed.xml",
+            "source_xml_url": "https://source.example.com/feed.xml",
             "bl_inventory_id": 987,
             "bl_warehouse_id": "bl_987",
             "bl_api_max_rpm": 55,
@@ -514,21 +514,17 @@ class TestSyncConfigMigration(unittest.TestCase):
 
         self.assertEqual(
             config["source_xml_url"],
-            "https://legacy.example.com/feed.xml",
+            "https://source.example.com/feed.xml",
         )
-        self.assertNotIn("comarch_xml_url", config)
 
     def test_primary_xml_url_env_is_used(self):
         with patch.dict(
             os.environ,
-            {
-                "XML_URL": "https://primary.example.com/feed.xml",
-                "COMARCH_URL": "https://legacy.example.com/feed.xml",
-            },
+            {"XML_URL": "https://primary.example.com/feed.xml"},
             clear=False,
         ):
             self.assertEqual(
-                lf._env_str_from_names(["XML_URL", "COMARCH_URL"]),
+                lf._env_str("XML_URL", ""),
                 "https://primary.example.com/feed.xml",
             )
 

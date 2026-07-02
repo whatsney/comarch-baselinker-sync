@@ -11,7 +11,7 @@ CDK_APP = ROOT / "cdk_app"
 if str(CDK_APP) not in sys.path:
     sys.path.insert(0, str(CDK_APP))
 
-from pipeline_stack import ComarchBaseLinkerPipelineStack  # noqa: E402
+from pipeline_stack import BaseLinkerSyncPipelineStack  # noqa: E402
 
 
 def _pipeline_template(sync_enabled: bool) -> Template:
@@ -28,7 +28,7 @@ def _pipeline_template(sync_enabled: bool) -> Template:
             "adminPasswordHash": "0" * 64,
         }
     )
-    stack = ComarchBaseLinkerPipelineStack(
+    stack = BaseLinkerSyncPipelineStack(
         app,
         "MigrationTestStack",
         env=cdk.Environment(account="111111111111", region="eu-north-1"),
@@ -43,7 +43,7 @@ class TestPipelineDeploymentState(unittest.TestCase):
         template.has_resource_properties(
             "AWS::Lambda::Function",
             {
-                "FunctionName": "comarch-baselinker-sync",
+                "FunctionName": "baselinker-sync",
                 "ReservedConcurrentExecutions": 0,
             },
         )
@@ -61,9 +61,16 @@ class TestPipelineDeploymentState(unittest.TestCase):
             },
         )
         template.has_resource_properties(
+            "AWS::Lambda::Function",
+            {
+                "FunctionName": "baselinker-sync-admin",
+                "Handler": "admin_lambda.lambda_handler",
+            },
+        )
+        template.has_resource_properties(
             "AWS::Scheduler::Schedule",
             {
-                "Name": "comarch-baselinker-budget-guard-monthly-enable",
+                "Name": "baselinker-budget-guard-monthly-enable",
                 "State": "DISABLED",
             },
         )
@@ -75,7 +82,7 @@ class TestPipelineDeploymentState(unittest.TestCase):
         template.has_resource_properties(
             "AWS::Lambda::Function",
             {
-                "FunctionName": "comarch-baselinker-sync",
+                "FunctionName": "baselinker-sync",
                 "ReservedConcurrentExecutions": 1,
             },
         )
@@ -93,7 +100,7 @@ class TestPipelineDeploymentState(unittest.TestCase):
         template.has_resource_properties(
             "AWS::Scheduler::Schedule",
             {
-                "Name": "comarch-baselinker-budget-guard-monthly-enable",
+                "Name": "baselinker-budget-guard-monthly-enable",
                 "State": "ENABLED",
             },
         )
@@ -102,7 +109,7 @@ class TestPipelineDeploymentState(unittest.TestCase):
         template.resource_count_is("AWS::Lambda::EventSourceMapping", 1)
         template.has_resource_properties(
             "AWS::Scheduler::Schedule",
-            Match.object_like({"Name": "comarch-baselinker-budget-guard-hourly-check"}),
+            Match.object_like({"Name": "baselinker-budget-guard-hourly-check"}),
         )
 
 

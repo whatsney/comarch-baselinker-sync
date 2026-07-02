@@ -82,9 +82,9 @@ class TestTeardownConfig(unittest.TestCase):
         args = teardown.parse_args(["--expected-account-id", "111111111111"])
         config = teardown.build_config(args)
 
-        self.assertIn("/aws/lambda/comarch-baselinker-sync", config.log_group_names)
-        self.assertIn("/aws/lambda/comarch-baselinker-sync-admin", config.log_group_names)
-        self.assertIn("/aws/lambda/comarch-baselinker-budget-guard", config.log_group_names)
+        self.assertIn("/aws/lambda/baselinker-sync", config.log_group_names)
+        self.assertIn("/aws/lambda/baselinker-sync-admin", config.log_group_names)
+        self.assertIn("/aws/lambda/baselinker-budget-guard", config.log_group_names)
 
     def test_cdk_asset_bucket_name_uses_qualifier_account_and_region(self):
         bucket_name = teardown.cdk_asset_bucket_name(

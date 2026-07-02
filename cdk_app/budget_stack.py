@@ -6,14 +6,14 @@ from constructs import Construct
 from context_values import get_context_text
 
 
-class ComarchBaseLinkerBudgetStack(Stack):
+class BaseLinkerSyncBudgetStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         budget_name = get_context_text(
             self.node,
             "budgetName",
-            "comarch-baselinker-sync-monthly-budget",
+            "baselinker-sync-monthly-budget",
         )
         budget_alert_email = get_context_text(
             self.node,

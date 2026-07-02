@@ -24,7 +24,7 @@ ssm = boto3.client("ssm")
 DEFAULT_BL_API_URL = "https://api.baselinker.com/connector.php"
 BL_API_TOKEN_SSM_PARAM = os.getenv(
     "BL_API_TOKEN_SSM_PARAM",
-    "/comarch-baselinker-sync/api-token",
+    "/baselinker-sync/api-token",
 )
 DEFAULT_BL_API_TIMEOUT_SEC = 60
 DEFAULT_BL_API_MAX_RPM = 90
@@ -47,8 +47,8 @@ DEFAULT_BL_MIN_REMAINING_MS_FOR_CONTINUE = 60_000
 DEFAULT_BL_FULL_AUDIT_ENABLED = True
 DEFAULT_BL_FULL_AUDIT_DETAILS_LIMIT_PER_TYPE = 20
 DEFAULT_BL_FULL_AUDIT_MAX_DETAILS_ROWS = 50000
-DEFAULT_BL_SYNC_STATUS_SSM_PARAM = "/comarch-baselinker-sync/push-sync-status"
-DEFAULT_BUDGET_FX_RATE_SSM_PARAM = "/comarch-baselinker-sync/usd-pln-rate"
+DEFAULT_BL_SYNC_STATUS_SSM_PARAM = "/baselinker-sync/push-sync-status"
+DEFAULT_BUDGET_FX_RATE_SSM_PARAM = "/baselinker-sync/usd-pln-rate"
 DEFAULT_NBP_USD_PLN_URL = "https://api.nbp.pl/api/exchangerates/rates/a/usd/?format=json"
 DEFAULT_BUDGET_USD_TO_PLN_RATE = 4.0
 DEFAULT_BL_RESET_STATE_IF_STATUS_STALE_ENABLED = True
@@ -367,14 +367,6 @@ def _env_str(name: str, default: str = "") -> str:
     if raw_value is None:
         return default
     return str(raw_value).strip()
-
-
-def _env_str_from_names(names: List[str], default: str = "") -> str:
-    for name in names:
-        value = _env_str(name)
-        if value != "":
-            return value
-    return default
 
 
 def _post_audit_issue_details(sync_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -920,10 +912,9 @@ def _get_ssm_parameter_string(parameter_name: str) -> str:
 
 
 def _source_xml_url_from_config(config: Dict[str, Any]) -> str:
-    # Legacy keys are read so existing SSM config parameters survive the rename.
     if not isinstance(config, dict):
         return ""
-    for key in ("source_xml_url", "xml_url", "comarch_xml_url", "comarch_url"):
+    for key in ("source_xml_url", "xml_url"):
         value = _clean(config.get(key))
         if value != "":
             return value
@@ -4287,10 +4278,7 @@ def _extract_event_payload(event: Any) -> Tuple[Dict[str, Any], str]:
 
 
 def lambda_handler(event, context):
-    # COMARCH_* names are legacy deployment fallbacks; XML_URL is the primary name.
-    default_source_xml_url = _env_str_from_names(
-        ["XML_URL", "COMARCH_URL", "COMARCH_XML_URL"]
-    )
+    default_source_xml_url = _env_str("XML_URL", "")
     if default_source_xml_url == "":
         raise RuntimeError("XML_URL must be configured.")
     output_bucket = os.environ["OUTPUT_BUCKET"]

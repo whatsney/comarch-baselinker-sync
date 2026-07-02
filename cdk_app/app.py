@@ -3,8 +3,8 @@ import os
 
 import aws_cdk as cdk
 
-from budget_stack import ComarchBaseLinkerBudgetStack
-from pipeline_stack import ComarchBaseLinkerPipelineStack
+from budget_stack import BaseLinkerSyncBudgetStack
+from pipeline_stack import BaseLinkerSyncPipelineStack
 
 
 app = cdk.App()
@@ -20,20 +20,20 @@ if not account:
 
 pipeline_stack_name = (
     app.node.try_get_context("pipelineStackName")
-    or "ComarchBaseLinkerSyncStack"
+    or "BaseLinkerSyncStack"
 )
 budget_stack_name = (
     app.node.try_get_context("budgetStackName")
-    or "ComarchBaseLinkerBudgetStack"
+    or "BaseLinkerBudgetStack"
 )
 
-ComarchBaseLinkerPipelineStack(
+BaseLinkerSyncPipelineStack(
     app,
     pipeline_stack_name,
     env=cdk.Environment(account=account, region=region),
 )
 
-ComarchBaseLinkerBudgetStack(
+BaseLinkerSyncBudgetStack(
     app,
     budget_stack_name,
     synthesizer=cdk.BootstraplessSynthesizer(),

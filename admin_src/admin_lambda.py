@@ -23,30 +23,26 @@ scheduler = boto3.client("scheduler")
 budgets = boto3.client("budgets", region_name="us-east-1")
 
 POLAND_TZ = ZoneInfo("Europe/Warsaw")
-STATUS_PARAM = os.getenv("SYNC_STATUS_PARAM", "/comarch-baselinker-sync/push-sync-status")
-SYNC_FUNCTION_NAME = os.getenv("SYNC_FUNCTION_NAME", "comarch-baselinker-sync")
-SYNC_CONFIG_PARAM = os.getenv("SYNC_CONFIG_PARAM", "/comarch-baselinker-sync/sync-config")
-# DEFAULT_COMARCH_XML_URL is accepted only as a migration fallback.
-DEFAULT_XML_URL = os.getenv("DEFAULT_XML_URL", "").strip() or os.getenv(
-    "DEFAULT_COMARCH_XML_URL",
-    "",
-).strip()
+STATUS_PARAM = os.getenv("SYNC_STATUS_PARAM", "/baselinker-sync/push-sync-status")
+SYNC_FUNCTION_NAME = os.getenv("SYNC_FUNCTION_NAME", "baselinker-sync")
+SYNC_CONFIG_PARAM = os.getenv("SYNC_CONFIG_PARAM", "/baselinker-sync/sync-config")
+DEFAULT_XML_URL = os.getenv("DEFAULT_XML_URL", "").strip()
 DEFAULT_BL_INVENTORY_ID = os.getenv("DEFAULT_BL_INVENTORY_ID", "")
 DEFAULT_BL_WAREHOUSE_ID = os.getenv("DEFAULT_BL_WAREHOUSE_ID", "")
 DEFAULT_BL_API_MAX_RPM = os.getenv("DEFAULT_BL_API_MAX_RPM", "90")
 BL_API_URL = os.getenv("BL_API_URL", "https://api.baselinker.com/connector.php")
 BL_API_TOKEN_SSM_PARAM = os.getenv(
     "BL_API_TOKEN_SSM_PARAM",
-    "/comarch-baselinker-sync/api-token",
+    "/baselinker-sync/api-token",
 )
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD_SHA256 = os.getenv("ADMIN_PASSWORD_SHA256", "")
-SCHEDULE_NAME = os.getenv("SCHEDULE_NAME", "comarch-baselinker-sync-midnight")
+SCHEDULE_NAME = os.getenv("SCHEDULE_NAME", "baselinker-sync-midnight")
 SCHEDULE_GROUP = os.getenv("SCHEDULE_GROUP", "default")
-BUDGET_NAME = os.getenv("BUDGET_NAME", "comarch-baselinker-sync-monthly-budget")
+BUDGET_NAME = os.getenv("BUDGET_NAME", "baselinker-sync-monthly-budget")
 BUDGET_LIMIT_USD = os.getenv("BUDGET_LIMIT_USD", "30")
 BUDGET_USD_TO_PLN_RATE = os.getenv("BUDGET_USD_TO_PLN_RATE", "4.00")
-BUDGET_FX_RATE_SSM_PARAM = os.getenv("BUDGET_FX_RATE_SSM_PARAM", "/comarch-baselinker-sync/usd-pln-rate")
+BUDGET_FX_RATE_SSM_PARAM = os.getenv("BUDGET_FX_RATE_SSM_PARAM", "/baselinker-sync/usd-pln-rate")
 AWS_ACCOUNT_ID = os.getenv("AWS_ACCOUNT_ID", "")
 BRAND_NAME = os.getenv("BRAND_NAME", "XML → BaseLinker Sync")
 BRAND_PANEL_TITLE = os.getenv("BRAND_PANEL_TITLE", "Product synchronization")
@@ -605,10 +601,9 @@ def _clean(value: object) -> str:
 
 
 def _source_xml_url_from_config(config: dict) -> str:
-    # Legacy keys are read so existing SSM config parameters survive the rename.
     if not isinstance(config, dict):
         return ""
-    for key in ("source_xml_url", "xml_url", "comarch_xml_url", "comarch_url"):
+    for key in ("source_xml_url", "xml_url"):
         value = _clean(config.get(key))
         if value != "":
             return value
@@ -2121,7 +2116,7 @@ def _page() -> str:
         if (!res.ok) throw new Error(data.message || translate('config_load_http', { status: res.status }));
         const config = data.config || {};
         configOptions = data.options || { inventories: [], warehouses: [] };
-        xmlUrlInput.value = config.source_xml_url || config.xml_url || config.comarch_xml_url || '';
+        xmlUrlInput.value = config.source_xml_url || config.xml_url || '';
         rpmInput.value = config.bl_api_max_rpm || 90;
         fillSelect(inventorySelect, configOptions.inventories || [], config.bl_inventory_id, translate('empty_inventories'));
         refreshWarehouseOptions(config.bl_warehouse_id);
